@@ -15,6 +15,8 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -22,6 +24,7 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Slider
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -90,6 +93,11 @@ fun SettingsScreen(
     var showQuestion by remember { mutableStateOf(AppConfig.getShowAnswerCardQuestion()) }
     var showOptions by remember { mutableStateOf(AppConfig.getShowAnswerCardOptions()) }
 
+    // 悬浮窗外观设置
+    var floatButtonSize by remember { mutableStateOf(AppConfig.getFloatButtonSize().toFloat()) }
+    var floatButtonAlpha by remember { mutableStateOf(AppConfig.getFloatButtonAlpha()) }
+    var floatCardAlpha by remember { mutableStateOf(AppConfig.getFloatCardAlpha()) }
+
     // 语言设置状态
     var showRestartDialog by remember { mutableStateOf(false) }
     var selectedLanguage by remember { mutableStateOf<String?>(null) }
@@ -108,6 +116,7 @@ fun SettingsScreen(
                 .fillMaxSize()
                 .padding(paddingValues)
                 .padding(horizontal = 16.dp)
+                .verticalScroll(rememberScrollState())
         ) {
             Spacer(modifier = Modifier.height(16.dp))
 
@@ -303,6 +312,85 @@ fun SettingsScreen(
                             }
                         )
                     }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            // 悬浮窗外观设置卡片
+            Card(
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp)
+                ) {
+                    Text(
+                        text = stringResource(R.string.setting_float_window_title),
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier.padding(bottom = 4.dp)
+                    )
+                    Text(
+                        text = stringResource(R.string.setting_float_window_desc),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(bottom = 16.dp)
+                    )
+
+                    // 按钮大小
+                    Text(
+                        text = stringResource(R.string.setting_float_button_size, floatButtonSize.toInt()),
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.Medium
+                    )
+                    Slider(
+                        value = floatButtonSize,
+                        onValueChange = { floatButtonSize = it },
+                        onValueChangeFinished = {
+                            AppConfig.saveFloatButtonSize(floatButtonSize.toInt())
+                        },
+                        valueRange = 32f..80f,
+                        steps = 11,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    // 按钮透明度
+                    Text(
+                        text = stringResource(R.string.setting_float_button_alpha, (floatButtonAlpha * 100).toInt()),
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.Medium
+                    )
+                    Slider(
+                        value = floatButtonAlpha,
+                        onValueChange = { floatButtonAlpha = it },
+                        onValueChangeFinished = {
+                            AppConfig.saveFloatButtonAlpha(floatButtonAlpha)
+                        },
+                        valueRange = 0.1f..1.0f,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    // 卡片透明度
+                    Text(
+                        text = stringResource(R.string.setting_float_card_alpha, (floatCardAlpha * 100).toInt()),
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.Medium
+                    )
+                    Slider(
+                        value = floatCardAlpha,
+                        onValueChange = { floatCardAlpha = it },
+                        onValueChangeFinished = {
+                            AppConfig.saveFloatCardAlpha(floatCardAlpha)
+                        },
+                        valueRange = 0.1f..1.0f,
+                        modifier = Modifier.fillMaxWidth()
+                    )
                 }
             }
 

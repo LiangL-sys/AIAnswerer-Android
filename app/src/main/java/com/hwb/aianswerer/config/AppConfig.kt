@@ -28,6 +28,11 @@ object AppConfig {
     private const val KEY_CROP_MODE = "crop_mode"
     private const val KEY_SHOW_ANSWER_CARD_QUESTION = "show_answer_card_question"
     private const val KEY_SHOW_ANSWER_CARD_OPTIONS = "show_answer_card_options"
+    private const val KEY_TAVILY_API_KEY = "tavily_api_key"
+    private const val KEY_TAVILY_ENABLED = "tavily_enabled"
+    private const val KEY_FLOAT_BUTTON_SIZE = "float_button_size"
+    private const val KEY_FLOAT_BUTTON_ALPHA = "float_button_alpha"
+    private const val KEY_FLOAT_CARD_ALPHA = "float_card_alpha"
 
     // 语言代码常量
     const val LANGUAGE_ZH = "zh"
@@ -298,6 +303,80 @@ object AppConfig {
     }
 
     // ========== 首次启动相关 ==========
+
+    // ========== Tavily 联网搜索相关 ==========
+
+    /**
+     * 保存 Tavily API Key（加密存储，降级时使用MMKV）
+     */
+    fun saveTavilyApiKey(key: String) {
+        val prefs = securePrefs
+        if (prefs != null) {
+            prefs.edit().putString(KEY_TAVILY_API_KEY, key).apply()
+        } else {
+            mmkv.encode(KEY_TAVILY_API_KEY, key)
+        }
+    }
+
+    /**
+     * 获取 Tavily API Key（优先从加密存储读取，降级时从MMKV读取）
+     */
+    fun getTavilyApiKey(): String {
+        val prefs = securePrefs
+        val stored = prefs?.getString(KEY_TAVILY_API_KEY, null)
+            ?: mmkv.decodeString(KEY_TAVILY_API_KEY, null)
+        return stored?.takeIf { it.isNotEmpty() } ?: ""
+    }
+
+    /**
+     * 保存 Tavily 启用状态
+     */
+    fun saveTavilyEnabled(enabled: Boolean) {
+        mmkv.encode(KEY_TAVILY_ENABLED, enabled)
+    }
+
+    /**
+     * 获取 Tavily 启用状态，默认为 false
+     */
+    fun getTavilyEnabled(): Boolean {
+        return mmkv.decodeBool(KEY_TAVILY_ENABLED, false)
+    }
+
+    /**
+     * 验证 Tavily 配置是否完整且启用
+     */
+    fun isTavilyConfigValid(): Boolean {
+        return getTavilyEnabled() && getTavilyApiKey().isNotBlank()
+    }
+
+    // ========== 悬浮窗外观相关 ==========
+
+    /** 悬浮按钮大小（dp），默认 48 */
+    fun getFloatButtonSize(): Int {
+        return mmkv.decodeInt(KEY_FLOAT_BUTTON_SIZE, 48)
+    }
+
+    fun saveFloatButtonSize(size: Int) {
+        mmkv.encode(KEY_FLOAT_BUTTON_SIZE, size.coerceIn(32, 80))
+    }
+
+    /** 悬浮按钮透明度 0.1~1.0，默认 0.9 */
+    fun getFloatButtonAlpha(): Float {
+        return mmkv.decodeFloat(KEY_FLOAT_BUTTON_ALPHA, 0.9f)
+    }
+
+    fun saveFloatButtonAlpha(alpha: Float) {
+        mmkv.encode(KEY_FLOAT_BUTTON_ALPHA, alpha.coerceIn(0.1f, 1.0f))
+    }
+
+    /** 卡片透明度 0.1~1.0，默认 1.0 */
+    fun getFloatCardAlpha(): Float {
+        return mmkv.decodeFloat(KEY_FLOAT_CARD_ALPHA, 1.0f)
+    }
+
+    fun saveFloatCardAlpha(alpha: Float) {
+        mmkv.encode(KEY_FLOAT_CARD_ALPHA, alpha.coerceIn(0.1f, 1.0f))
+    }
 
     /**
      * 检查是否为首次启动

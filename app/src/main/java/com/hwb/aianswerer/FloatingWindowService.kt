@@ -35,6 +35,7 @@ import androidx.savedstate.SavedStateRegistryController
 import androidx.savedstate.SavedStateRegistryOwner
 import androidx.savedstate.setViewTreeSavedStateRegistryOwner
 import com.hwb.aianswerer.api.OpenAIClient
+import com.hwb.aianswerer.api.TavilyClient
 import com.hwb.aianswerer.config.AppConfig
 import com.hwb.aianswerer.models.CropRect
 import com.hwb.aianswerer.models.formatAnswerWithConfig
@@ -236,27 +237,50 @@ class FloatingWindowService : Service(), LifecycleOwner, ViewModelStoreOwner,
         return START_STICKY
     }
 
+    // 悬浮窗内部偏移量（按钮中心的屏幕坐标）
+    private var floatOffsetX = mutableStateOf(0f)
+    private var floatOffsetY = mutableStateOf(200f)
+
     private fun showFloatingWindow() {
+        val metrics = resources.displayMetrics
+        val screenW = metrics.widthPixels.toFloat()
+        val screenH = metrics.heightPixels.toFloat()
+        val buttonSizePx = AppConfig.getFloatButtonSize() * metrics.density
+        val buttonHalf = buttonSizePx / 2f
+        val cardWidthPx = 300 * metrics.density
+
+        // 初始位置：按钮中心在屏幕右侧
+        floatOffsetX.value = screenW - buttonHalf
+
+        fun isLeftSide() = floatOffsetX.value < screenW / 2f
+
+        fun windowX(): Int {
+            return if (isLeftSide()) {
+                (floatOffsetX.value - buttonHalf).toInt().coerceAtLeast(0)
+            } else {
+                (floatOffsetX.value + buttonHalf - cardWidthPx).toInt()
+                    .coerceAtMost(screenW.toInt() - cardWidthPx.toInt())
+            }
+        }
+
         val params = WindowManager.LayoutParams(
             WindowManager.LayoutParams.WRAP_CONTENT,
             WindowManager.LayoutParams.WRAP_CONTENT,
-            // Android O+必须使用TYPE_APPLICATION_OVERLAY，旧版本使用TYPE_PHONE
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                 WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
             } else {
                 WindowManager.LayoutParams.TYPE_PHONE
             },
-            // FLAG_NOT_FOCUSABLE: 不获取焦点，允许下层窗口接收输入事件
-            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE,
+            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE
+                    or WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL,
             PixelFormat.TRANSLUCENT
         ).apply {
             gravity = Gravity.TOP or Gravity.START
-            x = 0
-            y = 200
+            x = windowX()
+            y = floatOffsetY.value.toInt().coerceIn(0, screenH.toInt() - buttonSizePx.toInt())
         }
 
         floatingView = ComposeView(this).apply {
-            // ComposeView需要这些ViewTree所有者才能正确管理生命周期和状态
             setViewTreeLifecycleOwner(this@FloatingWindowService)
             setViewTreeViewModelStoreOwner(this@FloatingWindowService)
             setViewTreeSavedStateRegistryOwner(this@FloatingWindowService)
@@ -267,6 +291,10 @@ class FloatingWindowService : Service(), LifecycleOwner, ViewModelStoreOwner,
                         answerText = answerText.value,
                         showAnswer = showAnswer.value,
                         statusMessage = statusMessage.value,
+                        buttonSize = AppConfig.getFloatButtonSize(),
+                        buttonAlpha = AppConfig.getFloatButtonAlpha(),
+                        cardAlpha = AppConfig.getFloatCardAlpha(),
+                        isLeftSide = isLeftSide(),
                         onCaptureClick = { handleCapture() },
                         onCloseAnswer = {
                             showAnswer.value = false
@@ -276,9 +304,30 @@ class FloatingWindowService : Service(), LifecycleOwner, ViewModelStoreOwner,
                             statusMessage.value = null
                         },
                         onMove = { deltaX, deltaY ->
-                            params.x += deltaX.toInt()
-                            params.y += deltaY.toInt()
-                            windowManager.updateViewLayout(this, params)
+                            floatOffsetX.value = (floatOffsetX.value + deltaX)
+                                .coerceIn(buttonHalf, screenW - buttonHalf)
+                            floatOffsetY.value = (floatOffsetY.value + deltaY)
+                                .coerceIn(buttonHalf, screenH - buttonHalf)
+                            floatingView?.let { v ->
+                                val p = v.layoutParams as WindowManager.LayoutParams
+                                p.x = windowX()
+                                p.y = floatOffsetY.value.toInt()
+                                    .coerceIn(0, screenH.toInt() - buttonSizePx.toInt())
+                                windowManager.updateViewLayout(v, p)
+                            }
+                        },
+                        onDragEnd = {
+                            val mid = screenW / 2f
+                            floatOffsetX.value = if (floatOffsetX.value < mid) {
+                                buttonHalf
+                            } else {
+                                screenW - buttonHalf
+                            }
+                            floatingView?.let { v ->
+                                val p = v.layoutParams as WindowManager.LayoutParams
+                                p.x = windowX()
+                                windowManager.updateViewLayout(v, p)
+                            }
                         }
                     )
                 }
@@ -295,6 +344,10 @@ class FloatingWindowService : Service(), LifecycleOwner, ViewModelStoreOwner,
                 answerText.value = null
 
                 statusMessage.value = getString(R.string.status_capturing)
+
+                // 等待 Compose 重组完成，确保上一次的答案卡片已从屏幕上移除，
+                // 否则 OCR 会识别到旧卡片内容而非新页面
+                delay(150)
 
                 val bitmap = screenCaptureManager?.captureScreen()
                 if (bitmap == null) {
@@ -474,8 +527,41 @@ class FloatingWindowService : Service(), LifecycleOwner, ViewModelStoreOwner,
                 val questionScope = AppConfig.getQuestionScope()
                 val autoCopy = AppConfig.getAutoCopy()
 
+                // Tavily 联网搜索（可选，失败不阻断主流程）
+                // 仅单题时触发搜索：检测文本中是否包含多题编号模式
+                var searchContext = ""
+                val multiQuestionPattern = Regex("""[1-9]\s*[.、．]\s*\S""")
+                val isSingleQuestion = !multiQuestionPattern.containsMatchIn(text)
+                if (isSingleQuestion && AppConfig.isTavilyConfigValid()) {
+                    statusMessage.value = getString(R.string.status_searching)
+                    // 从 OCR 文本中提取搜索关键词：问号所在行（题干）+ 选项行
+                    val lines = text.lines()
+                    val questionLine = lines.firstOrNull { it.contains("?") || it.contains("？") }?.trim()
+                    val optionLines = lines.filter { it.trim().matches(Regex("""^[A-Da-d][.、．)\s].*""")) }
+                        .map { it.trim() }
+                    val searchQuery = if (!questionLine.isNullOrBlank()) {
+                        (listOf(questionLine) + optionLines).joinToString(" ")
+                    } else {
+                        text  // 无法提取时降级为原文
+                    }
+                    AppLog.d("Tavily 搜索查询: $searchQuery")
+                    val tavilyResult = TavilyClient.getInstance().simpleSearch(
+                        query = searchQuery,
+                        maxResults = 3,
+                        includeAnswer = true
+                    )
+                    tavilyResult.onSuccess { results ->
+                        searchContext = results.joinToString("\n") {
+                            "【${it.title}】${it.content}"
+                        }
+                        AppLog.d("Tavily 搜索结果已注入上下文: ${results.size} 条")
+                    }
+                }
+
+                statusMessage.value = getString(R.string.status_getting_answer)
+
                 val apiClient = OpenAIClient.getInstance()
-                val result = apiClient.analyzeQuestion(text, questionTypes, questionScope)
+                val result = apiClient.analyzeQuestion(text, questionTypes, questionScope, searchContext)
 
                 result.onSuccess { aiAnswers ->
                     // 读取答题卡片显示配置

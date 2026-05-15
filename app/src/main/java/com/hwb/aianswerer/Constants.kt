@@ -21,9 +21,9 @@ object Constants {
      *   基础 prompt + 可选约束段（题型限制、知识范围限制）。
      *   约束段仅当用户设定了题型或范围时追加，避免给 AI 无关指令。
      */
-    fun buildSystemPrompt(questionTypes: Set<String>, questionScope: String): String {
+    fun buildSystemPrompt(questionTypes: Set<String>, questionScope: String, searchContext: String = ""): String {
         val basePrompt = getBaseSystemPrompt()
-        if (questionTypes.isEmpty() && questionScope.isBlank()) {
+        if (questionTypes.isEmpty() && questionScope.isBlank() && searchContext.isBlank()) {
             return basePrompt
         }
 
@@ -57,6 +57,15 @@ object Constants {
                 MyApplication.getString(R.string.system_prompt_scope_template, questionScope)
             )
         }
+
+        // 添加搜索上下文
+        if (searchContext.isNotBlank()) {
+            promptBuilder.append("\n\n")
+            promptBuilder.append(MyApplication.getString(R.string.system_prompt_search_header))
+            promptBuilder.append('\n')
+            promptBuilder.append(searchContext)
+        }
+
         return promptBuilder.toString()
     }
 

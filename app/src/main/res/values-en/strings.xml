@@ -38,6 +38,13 @@
     <string name="setting_show_options">Show Options</string>
     <string name="setting_show_options_desc">Display options in answer card</string>
 
+    <!-- Floating Window Appearance -->
+    <string name="setting_float_window_title">Floating Window</string>
+    <string name="setting_float_window_desc">Adjust button and card size &amp; transparency</string>
+    <string name="setting_float_button_size">Button size: %d dp</string>
+    <string name="setting_float_button_alpha">Button transparency: %d%%</string>
+    <string name="setting_float_card_alpha">Card transparency: %d%%</string>
+
     <!-- Session Settings -->
     <string name="session_settings_title">Session Settings</string>
     <string name="session_settings_desc">Configure question types and scope to improve accuracy</string>
@@ -80,6 +87,14 @@
     <string name="toast_settings_saved">Settings saved</string>
     <string name="toast_settings_error">Save failed, please check input</string>
 
+    <!-- Tavily Search Settings -->
+    <string name="tavily_settings_title">Web Search Enhancement</string>
+    <string name="tavily_settings_desc">Use Tavily search engine to fetch real-time references for more accurate AI answers</string>
+    <string name="tavily_enable_label">Enable Web Search</string>
+    <string name="tavily_enable_desc">Automatically search for references before answering</string>
+    <string name="label_tavily_api_key">Tavily API Key</string>
+    <string name="hint_tavily_api_key">tvly-xxxxxxxx</string>
+
     <!-- About screen -->
     <string name="about_title">About</string>
     <string name="about_app_intro_title">App Introduction</string>
@@ -119,6 +134,7 @@
     <string name="cd_close_button">Close</string>
     <string name="cd_hide_password">Hide password</string>
     <string name="cd_show_password">Show password</string>
+    <string name="cd_drag_handle">Drag to move</string>
 
     <!-- Confirm Text Screen -->
     <string name="confirm_text_title">Confirm Recognized Text</string>
@@ -197,6 +213,7 @@
     <string name="system_prompt_limit_header">## Constraints</string>
     <string name="system_prompt_type_template">Only handle the following question types: %1$s. If a question does not match, set questionType="%2$s".</string>
     <string name="system_prompt_scope_template">Limit the question scope to: %1$s. Prioritize knowledge within this scope when answering.</string>
+    <string name="system_prompt_search_header">## Reference Materials\nThe following are search results related to the question, which can be used as answering references (reference only, do not copy directly):</string>
     <string name="system_prompt_user_message">Please analyze the following question:\n\n%1$s</string>
     <string name="system_prompt_base"><![CDATA[You are a rigorous structured answering assistant. Read the question text provided by the user, extract the stem, type, options, and answer, and return valid JSON only. Do not output anything other than JSON (no explanations, no Markdown, no comments).
 
@@ -247,6 +264,7 @@
     <string name="status_recognizing">🔍 Recognizing text…</string>
     <string name="status_recognized">✅ Recognition complete</string>
     <string name="status_getting_answer">🤖 Getting answer…</string>
+    <string name="status_searching">🔍 Searching for references…</string>
     <string name="status_answer_copied">✅ Answer copied</string>
     <string name="status_answer_generated">✅ Answer generated</string>
     <string name="status_error_prefix">❌ %s</string>

@@ -74,7 +74,8 @@ class OpenAIClient {
     suspend fun analyzeQuestion(
         recognizedText: String,
         questionTypes: Set<String> = emptySet(),
-        questionScope: String = ""
+        questionScope: String = "",
+        searchContext: String = ""
     ): Result<List<AIAnswer>> = withContext(Dispatchers.IO) {
         try {
             // 从配置中读取最新的API设置
@@ -90,7 +91,7 @@ class OpenAIClient {
             }
 
             // 构建请求，使用动态系统提示词
-            val systemPrompt = Constants.buildSystemPrompt(questionTypes, questionScope)
+            val systemPrompt = Constants.buildSystemPrompt(questionTypes, questionScope, searchContext)
             val messages = listOf(
                 ChatMessage(role = "system", content = systemPrompt),
                 ChatMessage(
@@ -164,6 +165,56 @@ class OpenAIClient {
             throw e
         } catch (e: Exception) {
             Result.failure(e)
+        }
+    }
+
+    /**
+     * 轻量级调用：判断 OCR 文本中包含多少道题目。
+     * 返回题目数量，失败时返回 -1（调用方应视为多题，跳过搜索）。
+     */
+    suspend fun countQuestions(ocrText: String): Int = withContext(Dispatchers.IO) {
+        try {
+            val apiUrl = AppConfig.getApiUrl()
+            val apiKey = AppConfig.getApiKey()
+            val modelName = AppConfig.getModelName()
+            if (!AppConfig.isApiConfigValid()) return@withContext -1
+
+            val messages = listOf(
+                ChatMessage(
+                    role = "user",
+                    content = "以下是OCR识别的题目文本，请判断其中包含多少道独立的题目。只回复一个阿拉伯数字，不要任何解释。\n\n$ocrText"
+                )
+            )
+            val request = ChatRequest(
+                model = modelName,
+                messages = messages,
+                temperature = 0.0,
+                maxTokens = 64
+            )
+            val body = gson.toJson(request)
+                .toRequestBody("application/json; charset=utf-8".toMediaType())
+            val httpRequest = Request.Builder()
+                .url(apiUrl)
+                .addHeader("Authorization", "Bearer $apiKey")
+                .addHeader("Content-Type", "application/json")
+                .post(body)
+                .build()
+
+            val response = client.newCall(httpRequest).execute()
+            if (!response.isSuccessful) return@withContext -1
+
+            val responseBody = response.body?.string() ?: return@withContext -1
+            val chatResponse = gson.fromJson(responseBody, ChatResponse::class.java)
+            val content = chatResponse.choices.firstOrNull()?.message?.content?.trim() ?: return@withContext -1
+
+            // 提取数字
+            val number = Regex("""\d+""").find(content)?.value?.toIntOrNull()
+            number ?: -1
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            AppLog.e("判断题目数量失败", e)
+            -1
         }
     }
 

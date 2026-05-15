@@ -136,6 +136,12 @@ class ScreenCaptureManager(private val context: Context) {
                 )
             }
 
+            // 清除 ImageReader 缓冲区中的旧帧，避免 acquireLatestImage 返回过时画面
+            while (true) {
+                val old = imageReader?.acquireLatestImage() ?: break
+                old.close()
+            }
+
             // 设置图像可用监听器（每次截图都设置，确保回调正确）
             imageReader?.setOnImageAvailableListener({ reader ->
                 try {

@@ -38,6 +38,13 @@
     <string name="setting_show_options">显示选项</string>
     <string name="setting_show_options_desc">在答题卡片中显示选项内容</string>
 
+    <!-- 悬浮窗外观设置 -->
+    <string name="setting_float_window_title">悬浮窗外观</string>
+    <string name="setting_float_window_desc">调整悬浮按钮和卡片的大小与透明度</string>
+    <string name="setting_float_button_size">按钮大小：%d dp</string>
+    <string name="setting_float_button_alpha">按钮透明度：%d%%</string>
+    <string name="setting_float_card_alpha">卡片透明度：%d%%</string>
+
     <!-- 本次答题设置 -->
     <string name="session_settings_title">本次答题设置</string>
     <string name="session_settings_desc">根据题型和范围设置，提高答题准确率</string>
@@ -80,6 +87,14 @@
     <string name="toast_settings_saved">设置已保存</string>
     <string name="toast_settings_error">保存失败，请检查输入</string>
 
+    <!-- Tavily 联网搜索设置 -->
+    <string name="tavily_settings_title">联网搜索增强</string>
+    <string name="tavily_settings_desc">通过 Tavily 搜索引擎获取实时资料，提升 AI 答题准确率</string>
+    <string name="tavily_enable_label">启用联网搜索</string>
+    <string name="tavily_enable_desc">答题前自动搜索相关资料作为 AI 参考</string>
+    <string name="label_tavily_api_key">Tavily API Key</string>
+    <string name="hint_tavily_api_key">tvly-xxxxxxxx</string>
+
     <!-- 关于页面 -->
     <string name="about_title">关于</string>
     <string name="about_app_intro_title">应用简介</string>
@@ -88,7 +103,7 @@
     <string name="about_version">版本 %1$s (%2$d)</string>
     <string name="about_libraries_title">核心第三方库</string>
     <string name="about_github_title">GitHub</string>
-    <string name="about_github_link" translatable="false">https://github.com/wb-hwang/AIAnswerer-Android</string>
+    <string name="about_github_link" translatable="false">https://github.com/Townrain/AIAnswerer-Android</string>
     <string name="about_language_title">语言设置</string>
     <string name="about_language_chinese">简体中文</string>
     <string name="about_language_english">English</string>
@@ -120,6 +135,7 @@
     <string name="cd_close_button">关闭</string>
     <string name="cd_hide_password">隐藏密码</string>
     <string name="cd_show_password">显示密码</string>
+    <string name="cd_drag_handle">拖拽移动</string>
 
     <!-- 确认文本界面 -->
     <string name="confirm_text_title">确认识别内容</string>
@@ -198,6 +214,7 @@
     <string name="system_prompt_limit_header">## 限制条件</string>
     <string name="system_prompt_type_template">仅处理以下题型：%1$s。请尽量将题目解析为这些类型之一，若不符合则输出 questionType="%2$s"。</string>
     <string name="system_prompt_scope_template">题目范围限定在：%1$s。答案时请优先考虑该范围内的知识点。</string>
+    <string name="system_prompt_search_header">## 参考资料\n以下是与题目相关的搜索结果，可作为答题参考（仅参考，不直接复制）：</string>
     <string name="system_prompt_user_message">请分析以下题目：\n\n%1$s</string>
     <string name="system_prompt_base"><![CDATA[你是一个严格的答题结构化助手。读取用户提供的题目文本，抽取题干、题型、选项与答案，并仅返回合法 JSON。不得输出除 JSON 外的任何内容（无解释、无 Markdown、无注释）。
 
@@ -248,6 +265,7 @@
     <string name="status_recognizing">🔍 正在识别文字…</string>
     <string name="status_recognized">✅ 识别完成</string>
     <string name="status_getting_answer">🤖 正在获取答案…</string>
+    <string name="status_searching">🔍 正在搜索相关资料…</string>
     <string name="status_answer_copied">✅ 答案已复制</string>
     <string name="status_answer_generated">✅ 答案已生成</string>
     <string name="status_error_prefix">❌ %s</string>

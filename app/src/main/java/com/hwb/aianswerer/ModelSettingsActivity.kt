@@ -13,6 +13,8 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -25,6 +27,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarDuration
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -37,6 +40,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.hwb.aianswerer.api.OpenAIClient
+import com.hwb.aianswerer.api.TavilyClient
 import com.hwb.aianswerer.config.AppConfig
 import com.hwb.aianswerer.ui.components.AppTextField
 import com.hwb.aianswerer.ui.components.PasswordTextField
@@ -110,8 +114,13 @@ fun ModelSettingsScreen(
     var apiKey by remember { mutableStateOf(AppConfig.getApiKey()) }
     var modelName by remember { mutableStateOf(AppConfig.getModelName()) }
 
+    // Tavily 配置
+    var tavilyEnabled by remember { mutableStateOf(AppConfig.getTavilyEnabled()) }
+    var tavilyApiKey by remember { mutableStateOf(AppConfig.getTavilyApiKey()) }
+
     // 测试连接状态管理
     var testState by remember { mutableStateOf<TestConnectionState>(TestConnectionState.Idle) }
+    var tavilyTestState by remember { mutableStateOf<TestConnectionState>(TestConnectionState.Idle) }
     val snackbarHostState = remember { SnackbarHostState() }
     val coroutineScope = rememberCoroutineScope()
 
@@ -135,6 +144,7 @@ fun ModelSettingsScreen(
                 .fillMaxSize()
                 .padding(paddingValues)
                 .padding(horizontal = 16.dp)
+                .verticalScroll(rememberScrollState())
         ) {
             // 顶部说明
             Card(
@@ -291,6 +301,149 @@ fun ModelSettingsScreen(
                     fontWeight = FontWeight.Bold
                 )
             }
+
+            Spacer(modifier = Modifier.height(24.dp))
+
+            // ========== Tavily 联网搜索配置 ==========
+            Card(
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp)
+                ) {
+                    Text(
+                        text = stringResource(R.string.tavily_settings_title),
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier.padding(bottom = 4.dp)
+                    )
+                    Text(
+                        text = stringResource(R.string.tavily_settings_desc),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(bottom = 12.dp)
+                    )
+
+                    // 启用开关
+                    androidx.compose.foundation.layout.Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = androidx.compose.foundation.layout.Arrangement.SpaceBetween,
+                        verticalAlignment = androidx.compose.ui.Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = stringResource(R.string.tavily_enable_label),
+                                style = MaterialTheme.typography.titleSmall,
+                                fontWeight = FontWeight.Medium
+                            )
+                            Text(
+                                text = stringResource(R.string.tavily_enable_desc),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.padding(top = 4.dp)
+                            )
+                        }
+                        Switch(
+                            checked = tavilyEnabled,
+                            onCheckedChange = {
+                                tavilyEnabled = it
+                                AppConfig.saveTavilyEnabled(it)
+                            }
+                        )
+                    }
+
+                    // API Key 输入（启用时显示）
+                    if (tavilyEnabled) {
+                        Spacer(modifier = Modifier.height(12.dp))
+
+                        PasswordTextField(
+                            value = tavilyApiKey,
+                            onValueChange = { tavilyApiKey = it },
+                            label = stringResource(R.string.label_tavily_api_key),
+                            placeholder = stringResource(R.string.hint_tavily_api_key),
+                            modifier = Modifier.fillMaxWidth()
+                        )
+
+                        Spacer(modifier = Modifier.height(12.dp))
+
+                        // 测试连接按钮
+                        OutlinedButton(
+                            onClick = {
+                                coroutineScope.launch {
+                                    tavilyTestState = TestConnectionState.Testing
+                                    val result = TavilyClient.getInstance().testConnection(tavilyApiKey)
+                                    result.onSuccess {
+                                        tavilyTestState = TestConnectionState.Success
+                                        snackbarHostState.showSnackbar(
+                                            message = successMessage,
+                                            duration = SnackbarDuration.Short
+                                        )
+                                        tavilyTestState = TestConnectionState.Idle
+                                    }.onFailure { error ->
+                                        val errorMsg = error.message ?: MyApplication.getString(R.string.error_unknown)
+                                        tavilyTestState = TestConnectionState.Error(errorMsg)
+                                        snackbarHostState.showSnackbar(
+                                            message = failedMessageTemplate.format(errorMsg),
+                                            duration = SnackbarDuration.Long
+                                        )
+                                        tavilyTestState = TestConnectionState.Idle
+                                    }
+                                }
+                            },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(48.dp),
+                            enabled = tavilyTestState !is TestConnectionState.Testing && tavilyApiKey.isNotBlank(),
+                            colors = ButtonDefaults.outlinedButtonColors()
+                        ) {
+                            if (tavilyTestState is TestConnectionState.Testing) {
+                                CircularProgressIndicator(
+                                    modifier = Modifier.size(18.dp),
+                                    strokeWidth = 2.dp
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text(
+                                    text = stringResource(R.string.button_testing),
+                                    style = MaterialTheme.typography.labelLarge
+                                )
+                            } else {
+                                Text(
+                                    text = stringResource(R.string.button_test_connection),
+                                    style = MaterialTheme.typography.labelLarge,
+                                    fontWeight = FontWeight.Medium
+                                )
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(12.dp))
+
+                        Button(
+                            onClick = {
+                                AppConfig.saveTavilyApiKey(tavilyApiKey)
+                                Toast.makeText(
+                                    MyApplication.getAppContext(),
+                                    MyApplication.getString(R.string.toast_settings_saved),
+                                    Toast.LENGTH_SHORT
+                                ).show()
+                            },
+                            modifier = Modifier.fillMaxWidth(),
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = MaterialTheme.colorScheme.secondary
+                            )
+                        ) {
+                            Text(
+                                text = stringResource(R.string.button_save),
+                                style = MaterialTheme.typography.labelLarge,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(16.dp))
         }
     }
 }
