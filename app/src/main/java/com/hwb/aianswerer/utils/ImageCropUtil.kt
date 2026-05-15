@@ -70,7 +70,7 @@ object ImageCropUtil {
         try {
             java.io.File(filePath).delete()
         } catch (e: Exception) {
-            e.printStackTrace()
+            AppLog.e("删除临时文件失败: $filePath", e)
         }
     }
 

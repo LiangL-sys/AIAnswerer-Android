@@ -163,6 +163,7 @@ fun AIAnswer.formatAnswerWithConfig(
     }
 }
 
+// 使用 computed property 而非 val，确保语言切换后获取到最新的字符串资源
 private object AnswerSectionLabels {
     val question: String
         get() = MyApplication.getString(R.string.answer_section_question_title)

@@ -3,6 +3,7 @@ package com.hwb.aianswerer.utils
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
+import com.hwb.aianswerer.R
 
 /**
  * 剪贴板工具类
@@ -12,15 +13,18 @@ object ClipboardUtil {
     /**
      * 复制文本到剪贴板
      */
-    fun copyToClipboard(context: Context, text: String, label: String = "AI答案"): Boolean {
+    fun copyToClipboard(context: Context, text: String, label: String? = null): Boolean {
         return try {
             val clipboardManager =
                 context.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager
-            val clip = ClipData.newPlainText(label, text)
+            val clip = ClipData.newPlainText(
+                label ?: context.getString(R.string.clipboard_label),
+                text
+            )
             clipboardManager?.setPrimaryClip(clip)
             true
         } catch (e: Exception) {
-            e.printStackTrace()
+            AppLog.e("复制到剪贴板失败", e)
             false
         }
     }
@@ -39,7 +43,7 @@ object ClipboardUtil {
                 null
             }
         } catch (e: Exception) {
-            e.printStackTrace()
+            AppLog.e("读取剪贴板失败", e)
             null
         }
     }

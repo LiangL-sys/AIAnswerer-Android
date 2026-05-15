@@ -96,9 +96,9 @@
 # ========================================
 # Jetpack Compose 相关规则
 # ========================================
-# Compose 运行时需要保护
--keep class androidx.compose.** { *; }
--dontwarn androidx.compose.**
+# Compose 编译器插件会自动生成正确的 keep 规则，无需手动保留所有类
+# 仅保留运行时必要的注解
+-keepattributes *Annotation*
 
 # ========================================
 # Android 平台相关规则

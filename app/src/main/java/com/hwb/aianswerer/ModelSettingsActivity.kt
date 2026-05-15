@@ -46,15 +46,11 @@ import com.hwb.aianswerer.utils.LanguageUtil
 import kotlinx.coroutines.launch
 
 /**
- * 模型设置Activity
+ * 模型设置 — API URL / Key / Model 配置 + 连接测试。
  *
- * 配置立即保存到MMKV，下次API调用时生效
+ * 配置变更立即写入 MMKV，下次 API 调用自动生效，无需重启 Service。
  */
-class ModelSettingsActivity : ComponentActivity() {
-
-    override fun attachBaseContext(newBase: Context) {
-        super.attachBaseContext(LanguageUtil.attachBaseContext(newBase))
-    }
+class ModelSettingsActivity : BaseActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -119,7 +115,7 @@ fun ModelSettingsScreen(
     val snackbarHostState = remember { SnackbarHostState() }
     val coroutineScope = rememberCoroutineScope()
 
-    // 在Composable作用域中获取字符串资源（不能在coroutine中调用stringResource）
+    // 在 Composable 作用域中预取字符串资源，因为协程（Dispatchers.IO）中无法调用 stringResource
     val successMessage = stringResource(R.string.toast_connection_success)
     val failedMessageTemplate = stringResource(R.string.toast_connection_failed)
 

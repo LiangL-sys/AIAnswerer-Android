@@ -13,44 +13,14 @@ import android.content.IntentFilter
 import android.graphics.PixelFormat
 import android.os.Build
 import android.os.IBinder
-import android.util.Log
 import android.view.Gravity
 import android.view.WindowManager
-import androidx.compose.foundation.gestures.detectDragGestures
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.heightIn
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.FloatingActionButton
-import androidx.compose.material3.HorizontalDivider
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
-import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.ComposeView
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import androidx.core.app.NotificationCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleOwner
@@ -68,11 +38,14 @@ import com.hwb.aianswerer.api.OpenAIClient
 import com.hwb.aianswerer.config.AppConfig
 import com.hwb.aianswerer.models.CropRect
 import com.hwb.aianswerer.models.formatAnswerWithConfig
-import com.hwb.aianswerer.ui.icons.LocalIcons
+import com.hwb.aianswerer.ui.components.FloatingWindowContent
+import com.hwb.aianswerer.utils.AppLog
 import com.hwb.aianswerer.utils.ClipboardUtil
 import com.hwb.aianswerer.utils.ImageCropUtil
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
@@ -80,8 +53,19 @@ import kotlinx.coroutines.launch
 
 
 /**
- * 悬浮窗服务
- * 显示悬浮按钮用于截图，并显示AI答案
+ * 悬浮窗服务 — 答题模式的核心运行时。
+ *
+ * 生命周期：
+ *   1. MainActivity 请求权限后通过 startForegroundService 启动，
+ *      在 onStartCommand 中接收 MediaProjection intent 数据和答题设置。
+ *   2. onCreate 中创建悬浮窗并注册广播接收器，通过广播与 ConfirmTextActivity、
+ *      ImageCropActivity 通信（而非 startActivityForResult，因为这些 Activity
+ *      是 NEW_TASK 方式启动的，无法返回 result）。
+ *   3. onDestroy 时释放 MediaProjection、取消协程、移除悬浮窗。
+ *
+ * Compose 集成：
+ *   Service 主动实现 LifecycleOwner / ViewModelStoreOwner / SavedStateRegistryOwner，
+ *   使 ComposeView 能正常工作在 Service 上下文中（setViewTree* 链）。
  */
 class FloatingWindowService : Service(), LifecycleOwner, ViewModelStoreOwner,
     SavedStateRegistryOwner {
@@ -97,31 +81,36 @@ class FloatingWindowService : Service(), LifecycleOwner, ViewModelStoreOwner,
     private var answerText = mutableStateOf<String?>(null)
     private var showAnswer = mutableStateOf(false)
     private var statusMessage = mutableStateOf<String?>(null)
-    private var questionTypes = mutableSetOf<String>()  // 题型集合
-    private var questionScope = ""  // 题目范围
-    private var cropMode = AppConfig.CROP_MODE_FULL  // 截图识别模式
-    private var savedCropRect: CropRect? = null  // 保存的裁剪坐标（单次模式）
-    private var savedCropRectEach: CropRect? = null  // 保存的裁剪坐标（每次模式）
+    private var questionTypes = mutableSetOf<String>()
+    private var questionScope = ""
+    private var cropMode = AppConfig.CROP_MODE_FULL
+    // savedCropRect: 单次模式(once)首次裁剪后缓存，后续截图直接复用
+    // savedCropRectEach: 每次模式(each)缓存上一次坐标，作为裁剪 UI 的初始位置
+    private var savedCropRect: CropRect? = null
+    private var savedCropRectEach: CropRect? = null
 
-    // Lifecycle
+    // 当前进行中的网络请求 Job，用于在 onDestroy 时取消
+    private var currentFetchJob: Job? = null
+
+    // 以下三个组件是ComposeView在Service中运行的必要条件
     private val lifecycleRegistry = LifecycleRegistry(this)
     override val lifecycle: Lifecycle get() = lifecycleRegistry
 
-    // ViewModelStore
     private val _viewModelStore = ViewModelStore()
     override val viewModelStore: ViewModelStore
         get() = _viewModelStore
 
-    // SavedStateRegistry
     private val savedStateRegistryController = SavedStateRegistryController.create(this)
     override val savedStateRegistry: SavedStateRegistry
         get() = savedStateRegistryController.savedStateRegistry
 
+    // 使用应用本地广播（setPackage）与 ConfirmTextActivity、ImageCropActivity 通信。
+    // 不使用 startActivityForResult 是因为这些 Activity 以 NEW_TASK 标志启动，
+    // 无法通过常规方式返回 result。
     private val answerReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
             when (intent?.action) {
                 Constants.ACTION_SHOW_ANSWER -> {
-                    // 直接显示已获取的答案（向后兼容）
                     val answer = intent.getStringExtra(Constants.EXTRA_ANSWER_TEXT)
                     if (!answer.isNullOrBlank()) {
                         answerText.value = answer
@@ -130,7 +119,6 @@ class FloatingWindowService : Service(), LifecycleOwner, ViewModelStoreOwner,
                 }
 
                 Constants.ACTION_REQUEST_ANSWER -> {
-                    // 接收问题文本，调用API获取答案
                     val questionText = intent.getStringExtra(Constants.EXTRA_QUESTION_TEXT)
                     if (!questionText.isNullOrBlank()) {
                         fetchAnswer(questionText)
@@ -138,7 +126,6 @@ class FloatingWindowService : Service(), LifecycleOwner, ViewModelStoreOwner,
                 }
 
                 ACTION_CROP_RESULT -> {
-                    // 接收裁剪结果
                     val imagePath = intent.getStringExtra(EXTRA_IMAGE_PATH)
                     val topLeftX = intent.getFloatExtra(ImageCropActivity.EXTRA_TOP_LEFT_X, 0f)
                     val topLeftY = intent.getFloatExtra(ImageCropActivity.EXTRA_TOP_LEFT_Y, 0f)
@@ -183,6 +170,7 @@ class FloatingWindowService : Service(), LifecycleOwner, ViewModelStoreOwner,
 
     override fun onCreate() {
         super.onCreate()
+        // 初始化SavedStateRegistry（必须在生命周期状态变更前调用）
         savedStateRegistryController.performRestore(null)
         lifecycleRegistry.currentState = Lifecycle.State.CREATED
 
@@ -204,12 +192,16 @@ class FloatingWindowService : Service(), LifecycleOwner, ViewModelStoreOwner,
 
         showFloatingWindow()
 
+        // 快速推进生命周期到RESUMED状态，使ComposeView能够正常组合和渲染
         lifecycleRegistry.currentState = Lifecycle.State.STARTED
         lifecycleRegistry.currentState = Lifecycle.State.RESUMED
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        // 初始化MediaProjection和设置
+        // intent 包含了 MainActivity 启动时传入的两类数据：
+        //   1) MediaProjection 的 resultCode + data（从 onActivityResult 获取）
+        //   2) 答题设置（题型、范围、裁剪模式）
+        // 新答题会话启动时会清空 savedCropRect，确保旧裁剪坐标不会残留。
         intent?.let {
             if (it.hasExtra("resultCode") && it.hasExtra("data")) {
                 val resultCode = it.getIntExtra("resultCode", Activity.RESULT_CANCELED)
@@ -236,10 +228,11 @@ class FloatingWindowService : Service(), LifecycleOwner, ViewModelStoreOwner,
                     ?: AppConfig.CROP_MODE_FULL
             }
 
-            // 清除保存的裁剪坐标（新答题会话）
+            // 新答题会话开始，清除上次保存的裁剪坐标
             savedCropRect = null
             savedCropRectEach = null
         }
+        // START_STICKY: Service被系统杀死后会尝试重建，但intent为null
         return START_STICKY
     }
 
@@ -247,11 +240,13 @@ class FloatingWindowService : Service(), LifecycleOwner, ViewModelStoreOwner,
         val params = WindowManager.LayoutParams(
             WindowManager.LayoutParams.WRAP_CONTENT,
             WindowManager.LayoutParams.WRAP_CONTENT,
+            // Android O+必须使用TYPE_APPLICATION_OVERLAY，旧版本使用TYPE_PHONE
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                 WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
             } else {
                 WindowManager.LayoutParams.TYPE_PHONE
             },
+            // FLAG_NOT_FOCUSABLE: 不获取焦点，允许下层窗口接收输入事件
             WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE,
             PixelFormat.TRANSLUCENT
         ).apply {
@@ -261,6 +256,7 @@ class FloatingWindowService : Service(), LifecycleOwner, ViewModelStoreOwner,
         }
 
         floatingView = ComposeView(this).apply {
+            // ComposeView需要这些ViewTree所有者才能正确管理生命周期和状态
             setViewTreeLifecycleOwner(this@FloatingWindowService)
             setViewTreeViewModelStoreOwner(this@FloatingWindowService)
             setViewTreeSavedStateRegistryOwner(this@FloatingWindowService)
@@ -295,20 +291,21 @@ class FloatingWindowService : Service(), LifecycleOwner, ViewModelStoreOwner,
     private fun handleCapture() {
         serviceScope.launch {
             try {
-                // 隐藏上一道题的结果
                 showAnswer.value = false
                 answerText.value = null
 
-                statusMessage.value = "📸 正在截图..."
+                statusMessage.value = getString(R.string.status_capturing)
 
-                // 执行截图
                 val bitmap = screenCaptureManager?.captureScreen()
                 if (bitmap == null) {
-                    statusMessage.value = "❌ 截图失败，请确保已授予截图权限"
+                    showErrorMessage(getString(R.string.status_capture_failed))
                     return@launch
                 }
 
-                // 根据截图识别模式处理
+                // 根据裁剪模式决定是否需要裁剪步骤：
+                //   full  → 直接 OCR 全屏
+                //   each  → 每次都启动裁剪 UI（可复用像素坐标）
+                //   once  → 首次启动裁剪 UI，后续复用 savedCropRect（图片坐标）
                 when (cropMode) {
                     AppConfig.CROP_MODE_FULL -> {
                         // 全屏模式：直接识别
@@ -321,29 +318,22 @@ class FloatingWindowService : Service(), LifecycleOwner, ViewModelStoreOwner,
                     }
 
                     AppConfig.CROP_MODE_ONCE -> {
-                        if (savedCropRect != null) {
+                        savedCropRect?.let { rect ->
                             // 已有保存的坐标：直接裁剪
-                            val croppedBitmap = ImageCropUtil.cropBitmap(
-                                bitmap,
-                                savedCropRect!!
-                            )
+                            val croppedBitmap = ImageCropUtil.cropBitmap(bitmap, rect)
                             bitmap.recycle()
                             processBitmap(croppedBitmap)
-                        } else {
+                        } ?: run {
                             // 没有坐标：启动裁剪Activity
                             launchCropActivity(bitmap, null)
                         }
                     }
                 }
 
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
-                statusMessage.value = "❌ 操作失败: ${e.message}"
-                Log.e(TAG, "❌ 操作失败: ${e.message}")
-                // 5秒后自动关闭错误消息
-                delay(5000)
-                if (statusMessage.value?.startsWith("❌") == true) {
-                    statusMessage.value = null
-                }
+                showErrorMessage(getString(R.string.status_operation_failed, e.message ?: ""))
             }
         }
     }
@@ -377,14 +367,13 @@ class FloatingWindowService : Service(), LifecycleOwner, ViewModelStoreOwner,
             }
             startActivity(intent)
 
-            statusMessage.value = "✂️ 请选择识别区域..."
+            statusMessage.value = getString(R.string.status_select_region)
             delay(2000)
             statusMessage.value = null
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
-            statusMessage.value = "❌ 启动裁剪失败: ${e.message}"
-            Log.e(TAG, "启动裁剪失败", e)
-            delay(5000)
-            statusMessage.value = null
+            showErrorMessage(getString(R.string.status_crop_launch_failed, e.message ?: ""))
         }
     }
 
@@ -410,28 +399,29 @@ class FloatingWindowService : Service(), LifecycleOwner, ViewModelStoreOwner,
 
                 // 清理临时文件
                 ImageCropUtil.deleteTempFile(imagePath)
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
-                statusMessage.value = "❌ 裁剪失败: ${e.message}"
-                Log.e(TAG, "裁剪失败", e)
-                delay(5000)
-                statusMessage.value = null
+                showErrorMessage(getString(R.string.status_crop_failed, e.message ?: ""))
             }
         }
     }
 
     /**
-     * 处理bitmap（OCR识别）
+     * OCR 识别 + 后续流程分流：
+     *   autoSubmit=true  → 跳过确认，直接调用 AI 接口
+     *   autoSubmit=false → 启动 ConfirmTextActivity 让用户编辑后再提交
      */
     private suspend fun processBitmap(bitmap: android.graphics.Bitmap) {
         try {
-            statusMessage.value = "🔍 正在识别文字..."
+            statusMessage.value = getString(R.string.status_recognizing)
 
             // 识别文本
             val result = textRecognitionManager.recognizeText(bitmap)
             bitmap.recycle()
 
             result.onSuccess { recognizedText ->
-                statusMessage.value = "✅ 识别完成"
+                statusMessage.value = getString(R.string.status_recognized)
 
                 // 从配置读取自动提交设置
                 val autoSubmit = AppConfig.getAutoSubmit()
@@ -454,20 +444,12 @@ class FloatingWindowService : Service(), LifecycleOwner, ViewModelStoreOwner,
                     statusMessage.value = null
                 }
             }.onFailure { error ->
-                statusMessage.value = "❌ 文字识别失败: ${error.message}"
-                // 5秒后自动关闭错误消息
-                delay(5000)
-                if (statusMessage.value?.startsWith("❌") == true) {
-                    statusMessage.value = null
-                }
+                showErrorMessage(getString(R.string.status_recognition_failed, error.message ?: ""))
             }
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
-            statusMessage.value = "❌ 识别失败: ${e.message}"
-            Log.e(TAG, "识别失败", e)
-            delay(5000)
-            if (statusMessage.value?.startsWith("❌") == true) {
-                statusMessage.value = null
-            }
+            showErrorMessage(getString(R.string.status_recognition_error, e.message ?: ""))
         }
     }
 
@@ -476,9 +458,16 @@ class FloatingWindowService : Service(), LifecycleOwner, ViewModelStoreOwner,
      * @param text 问题文本
      */
     private fun fetchAnswer(text: String) {
-        lifecycleScope.launch {
+        currentFetchJob?.cancel()
+        currentFetchJob = lifecycleScope.launch {
             try {
-                statusMessage.value = "🤖 正在获取答案..."
+                // 网络连接预检
+                if (!OpenAIClient.isNetworkAvailable()) {
+                    showErrorMessage(getString(R.string.error_api_unknown_host))
+                    return@launch
+                }
+
+                statusMessage.value = getString(R.string.status_getting_answer)
 
                 // 从配置读取答题设置
                 val questionTypes = AppConfig.getQuestionTypes()
@@ -488,14 +477,23 @@ class FloatingWindowService : Service(), LifecycleOwner, ViewModelStoreOwner,
                 val apiClient = OpenAIClient.getInstance()
                 val result = apiClient.analyzeQuestion(text, questionTypes, questionScope)
 
-                result.onSuccess { aiAnswer ->
+                result.onSuccess { aiAnswers ->
                     // 读取答题卡片显示配置
                     val showQuestion =
                         AppConfig.getShowAnswerCardQuestion()
                     val showOptions = AppConfig.getShowAnswerCardOptions()
 
-                    // 根据配置格式化答案
-                    val formattedAnswer = aiAnswer.formatAnswerWithConfig(showQuestion, showOptions)
+                    // 格式化所有答案
+                    val formattedAnswer = if (aiAnswers.size == 1) {
+                        // 单个答案，直接格式化
+                        aiAnswers.first().formatAnswerWithConfig(showQuestion, showOptions)
+                    } else {
+                        // 多个答案，用分隔线连接
+                        aiAnswers.mapIndexed { index, answer ->
+                            val header = "━━━ 第 ${index + 1} 题 ━━━\n"
+                            header + answer.formatAnswerWithConfig(showQuestion, showOptions)
+                        }.joinToString("\n\n")
+                    }
 
                     // 根据设置决定是否复制到剪贴板
                     if (autoCopy) {
@@ -506,24 +504,16 @@ class FloatingWindowService : Service(), LifecycleOwner, ViewModelStoreOwner,
                     answerText.value = formattedAnswer
                     showAnswer.value = true
 
-                    statusMessage.value = if (autoCopy) "✅ 答案已复制" else "✅ 答案已生成"
+                    statusMessage.value = if (autoCopy) getString(R.string.status_answer_copied) else getString(R.string.status_answer_generated)
                     delay(2000)
                     statusMessage.value = null
                 }.onFailure { error ->
-                    statusMessage.value = "❌ AI分析失败: ${error.message}"
-                    Log.e(TAG, "❌ AI分析失败: ${error.message}")
-                    delay(5000)
-                    if (statusMessage.value?.startsWith("❌") == true) {
-                        statusMessage.value = null
-                    }
+                    showErrorMessage(getString(R.string.status_ai_analysis_failed, error.message ?: ""))
                 }
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
-                statusMessage.value = "❌ 获取答案失败: ${e.message}"
-                Log.e(TAG, "❌ 获取答案失败: ${e.message}")
-                delay(5000)
-                if (statusMessage.value?.startsWith("❌") == true) {
-                    statusMessage.value = null
-                }
+                showErrorMessage(getString(R.string.status_fetch_answer_failed, e.message ?: ""))
             }
         }
     }
@@ -532,10 +522,10 @@ class FloatingWindowService : Service(), LifecycleOwner, ViewModelStoreOwner,
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val channel = NotificationChannel(
                 Constants.NOTIFICATION_CHANNEL_ID,
-                Constants.NOTIFICATION_CHANNEL_NAME,
+                getString(R.string.notification_channel_name),
                 NotificationManager.IMPORTANCE_LOW
             ).apply {
-                description = "AI答题助手后台服务"
+                description = getString(R.string.notification_channel_name)
             }
 
             val notificationManager = getSystemService(NotificationManager::class.java)
@@ -564,10 +554,14 @@ class FloatingWindowService : Service(), LifecycleOwner, ViewModelStoreOwner,
         super.onDestroy()
         lifecycleRegistry.currentState = Lifecycle.State.DESTROYED
 
+        // 取消进行中的网络请求
+        currentFetchJob?.cancel()
+        currentFetchJob = null
+
         try {
             unregisterReceiver(answerReceiver)
-        } catch (e: Exception) {
-            e.printStackTrace()
+        } catch (e: IllegalArgumentException) {
+            AppLog.w("Receiver not registered", e)
         }
 
         floatingView?.let {
@@ -579,139 +573,27 @@ class FloatingWindowService : Service(), LifecycleOwner, ViewModelStoreOwner,
         _viewModelStore.clear()
     }
 
-    override fun onBind(intent: Intent?): IBinder? = null
-}
+    // ========== 状态消息辅助方法 ==========
 
-@Composable
-fun FloatingWindowContent(
-    answerText: String?,
-    showAnswer: Boolean,
-    statusMessage: String?,
-    onCaptureClick: () -> Unit,
-    onCloseAnswer: () -> Unit,
-    onCloseStatus: () -> Unit,
-    onMove: (Float, Float) -> Unit
-) {
-    var offsetX by remember { mutableStateOf(0f) }
-    var offsetY by remember { mutableStateOf(0f) }
-
-    Column(
-        horizontalAlignment = Alignment.End
-    ) {
-        // 悬浮按钮
-        FloatingActionButton(
-            onClick = onCaptureClick,
-            modifier = Modifier
-                .size(37.dp)
-                .pointerInput(Unit) {
-                    detectDragGestures { _, dragAmount ->
-                        offsetX += dragAmount.x
-                        offsetY += dragAmount.y
-                        onMove(dragAmount.x, dragAmount.y)
-                    }
-                },
-            containerColor = MaterialTheme.colorScheme.primary,
-            contentColor = Color.White
-        ) {
-            Icon(
-                imageVector = LocalIcons.Search,
-                contentDescription = MyApplication.getString(R.string.cd_capture_button),
-                modifier = Modifier.size(21.dp)
-            )
-        }
-
-        // 状态消息卡片
-        if (statusMessage != null) {
-            Spacer(modifier = Modifier.height(8.dp))
-
-            Card(
-                modifier = Modifier.width(200.dp),
-                shape = RoundedCornerShape(8.dp),
-                colors = CardDefaults.cardColors(
-                    containerColor = MaterialTheme.colorScheme.secondaryContainer
-                ),
-                elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
-            ) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(12.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(
-                        text = statusMessage,
-                        fontSize = 13.sp,
-                        modifier = Modifier.weight(1f)
-                    )
-                    IconButton(
-                        onClick = onCloseStatus,
-                        modifier = Modifier.size(20.dp)
-                    ) {
-                        Icon(
-                            imageVector = LocalIcons.Close,
-                            contentDescription = MyApplication.getString(R.string.cd_close_button),
-                            modifier = Modifier.size(16.dp)
-                        )
-                    }
-                }
-            }
-        }
-
-        // 答案显示卡片
-        if (showAnswer && answerText != null) {
-            Spacer(modifier = Modifier.height(8.dp))
-
-            Card(
-                modifier = Modifier
-                    .width(300.dp)
-                    .heightIn(max = 400.dp),
-                shape = RoundedCornerShape(12.dp),
-                colors = CardDefaults.cardColors(
-                    containerColor = MaterialTheme.colorScheme.surface
-                ),
-                elevation = CardDefaults.cardElevation(defaultElevation = 8.dp)
-            ) {
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(12.dp)
-                ) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text(
-                            text = MyApplication.getString(R.string.floating_answer_title),
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 16.sp
-                        )
-                        IconButton(
-                            onClick = onCloseAnswer,
-                            modifier = Modifier.size(24.dp)
-                        ) {
-                            Icon(
-                                imageVector = LocalIcons.Close,
-                                contentDescription = MyApplication.getString(R.string.cd_close_button),
-                                tint = MaterialTheme.colorScheme.onSurface
-                            )
-                        }
-                    }
-
-                    HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
-
-                    Text(
-                        text = answerText,
-                        fontSize = 14.sp,
-                        modifier = Modifier
-                            .verticalScroll(rememberScrollState())
-                            .weight(1f, fill = false)
-                    )
-                }
+    private fun showStatusMessage(message: String, durationMs: Long = 2000) {
+        serviceScope.launch {
+            statusMessage.value = message
+            delay(durationMs)
+            if (statusMessage.value == message) {
+                statusMessage.value = null
             }
         }
     }
-}
 
+    private fun showErrorMessage(message: String) {
+        showStatusMessage(getString(R.string.status_error_prefix, message), 5000)
+        AppLog.e(message)
+    }
+
+    private fun showSuccessMessage(message: String) {
+        showStatusMessage(getString(R.string.status_success_prefix, message), 2000)
+    }
+
+    override fun onBind(intent: Intent?): IBinder? = null
+}
 

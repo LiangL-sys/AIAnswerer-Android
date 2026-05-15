@@ -1,12 +1,11 @@
 package com.hwb.aianswerer
 
 /**
- * 应用常量配置
+ * 应用级常量：通知配置、Intent Action 定义、系统提示词构建。
  */
 object Constants {
     // 通知渠道配置
     const val NOTIFICATION_CHANNEL_ID = "ai_answerer_service"
-    const val NOTIFICATION_CHANNEL_NAME = "AI答题助手服务"
     const val NOTIFICATION_ID = 1001
 
     // Intent Actions
@@ -18,11 +17,9 @@ object Constants {
 
 
     /**
-     * 根据设置构建系统提示词
-     *
-     * @param questionTypes 题型集合（如：单选题、多选题等）
-     * @param questionScope 题目内容范围
-     * @return 优化后的系统提示词
+     * 动态构建系统提示词：
+     *   基础 prompt + 可选约束段（题型限制、知识范围限制）。
+     *   约束段仅当用户设定了题型或范围时追加，避免给 AI 无关指令。
      */
     fun buildSystemPrompt(questionTypes: Set<String>, questionScope: String): String {
         val basePrompt = getBaseSystemPrompt()

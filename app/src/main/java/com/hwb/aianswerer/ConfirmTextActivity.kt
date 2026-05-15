@@ -3,7 +3,6 @@ package com.hwb.aianswerer
 import android.content.Context
 import android.content.Intent
 import android.os.Bundle
-import android.util.Log
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -43,18 +42,13 @@ import com.hwb.aianswerer.utils.LanguageUtil
 
 
 /**
- * 透明确认Activity
- * 显示OCR识别的文本，让用户确认后调用AI获取答案
+ * 透明确认 Activity — 显示 OCR 识别文本供用户编辑，确认后通过本地广播
+ * 将文本传回 FloatingWindowService 调用 AI 接口。
+ *
+ * 使用广播而非 startActivityForResult 返回数据，因为 Service 启动的 Activity
+ * 带 NEW_TASK 标志，无法通过常规 result 机制回传。
  */
-class ConfirmTextActivity : ComponentActivity() {
-
-    companion object {
-        private const val TAG = "ConfirmTextActivity"
-    }
-
-    override fun attachBaseContext(newBase: Context) {
-        super.attachBaseContext(LanguageUtil.attachBaseContext(newBase))
-    }
+class ConfirmTextActivity : BaseActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -90,12 +84,7 @@ class ConfirmTextActivity : ComponentActivity() {
             setPackage(packageName)  // 指定应用包名，确保广播能被接收（Android 8.0+要求）
             putExtra(Constants.EXTRA_QUESTION_TEXT, text)
         }
-        Log.d(
-            TAG,
-            "发送请求答案广播: Action=${intent.action}, Package=${intent.`package`}, 文本长度=${text.length}"
-        )
         sendBroadcast(intent)
-        Log.d(TAG, "广播已发送，即将关闭Activity")
 
         // 立即关闭Activity
         finish()

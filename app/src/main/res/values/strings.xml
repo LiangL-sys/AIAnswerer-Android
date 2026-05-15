@@ -203,7 +203,7 @@
 
 ## 输出要求
 - 若输入仅含1道题：返回一个 JSON 对象。
-- 若输入包含多道题：返回一个 JSON 数组，每个元素为一个对象。
+- 若输入包含多道题：返回一个 JSON 数组，每个元素为一道题的对象。
 - 每个对象包含以下字段：
 ```
   {
@@ -216,27 +216,49 @@
 
 ## 题型判定
 - 单选题、多选题、不定项选择题 → "%1$s"
-- 含有空格或下划线（如“（    ）”、“_____”） → "%3$s"
+- 含有空格或下划线（如"（    ）"、"_____"） → "%3$s"
 - 其他主观作答类 → "%2$s"
 
-## 选项抽取规则（仅当题型为“%1$s”）
+## 选项抽取规则（仅当题型为"%1$s"）
 - 支持识别多种标记格式：A. / A、 / （A） / A) / A: / A： / A． 等。
 - 输出时标准化为 "A. xxx" 格式。
 - 按题目原有顺序提取，去除多余换行和空格。
 
-## 答案生成规则
+## 答案生成规则（必须填写 answer 字段）
 - %1$s：
   - 单选：返回正确选项字母（如 "A" 或 "A. 内容"）。
   - 多选/不定项：返回所有正确选项字母，格式 "ABC" 或 "A、B、C"。
+  - 必须根据你的知识给出答案，不得留空。
 - %3$s：返回完整答案；多空用 "；" 分隔。
 - %2$s：简洁准确地回答（1–3 句要点）。
-- 若题干未给出答案且无法推断：answer 置为 ""。
+- 绝对禁止将 answer 设为空字符串，你必须根据常识和知识给出答案。
 
 ## 格式要求
 - JSON 必须语法有效（UTF-8、无尾逗号、无多余文本）。
 - 不得添加注释、说明、解释文字或 Markdown。
 - 保留题目中关键条件与单位，统一空格与符号样式。
 - 仅输出 JSON 本体，不得使用任何代码围栏或 Markdown 语法。
-- 输出必须以“{”或“[”开头，以“}”或“]”结尾，中间不含其他前后缀字符。
+- 输出必须以"{"或"["开头，以"}"或"]"结尾，中间不含其他前后缀字符。
 ]]></string>
+
+    <!-- 悬浮窗状态消息 -->
+    <string name="status_capturing">📸 正在截图…</string>
+    <string name="status_capture_failed">截图失败，请确保已授予截图权限</string>
+    <string name="status_select_region">✂️ 请选择识别区域…</string>
+    <string name="status_recognizing">🔍 正在识别文字…</string>
+    <string name="status_recognized">✅ 识别完成</string>
+    <string name="status_getting_answer">🤖 正在获取答案…</string>
+    <string name="status_answer_copied">✅ 答案已复制</string>
+    <string name="status_answer_generated">✅ 答案已生成</string>
+    <string name="status_error_prefix">❌ %s</string>
+    <string name="status_success_prefix">✅ %s</string>
+    <string name="status_operation_failed">操作失败: %s</string>
+    <string name="status_crop_launch_failed">启动裁剪失败: %s</string>
+    <string name="status_crop_failed">裁剪失败: %s</string>
+    <string name="status_recognition_failed">文字识别失败: %s</string>
+    <string name="status_recognition_error">识别失败: %s</string>
+    <string name="status_ai_analysis_failed">AI分析失败: %s</string>
+    <string name="status_fetch_answer_failed">获取答案失败: %s</string>
+    <string name="notification_channel_name">AI答题助手服务</string>
+    <string name="clipboard_label">AI答案</string>
 </resources>

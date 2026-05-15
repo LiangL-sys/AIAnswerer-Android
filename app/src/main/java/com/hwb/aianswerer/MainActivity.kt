@@ -73,10 +73,20 @@ import com.hwb.aianswerer.ui.theme.AIAnswererTheme
 import com.hwb.aianswerer.utils.LanguageUtil
 
 /**
- * 主界面Activity
- * 负责权限管理、答题模式控制和用户界面展示
+ * 主界面 — 权限管理、答题设置、启动/停止悬浮窗服务。
+ *
+ * 权限获取顺序：
+ *   1. 先检查 API 配置是否完整（未配置则提示去设置）
+ *   2. 再请求 SYSTEM_ALERT_WINDOW（悬浮窗权限）
+ *   3. 最后请求 MediaProjection（屏幕截图权限）
+ *   悬浮窗权限必须先于截图权限，因为用户可能先同意截图再拒绝悬浮窗，
+ *   导致拿到了截图 data 但无法启动服务。
+ *
+ * Dialog 队列：
+ *   首次启动和 API 未配置时可能同时触发语言选择和模型设置提醒。
+ *   使用 FIFO 队列确保同一时间只有一个 Dialog 可见。
  */
-class MainActivity : ComponentActivity() {
+class MainActivity : BaseActivity() {
 
     private var isAnswerModeActive by mutableStateOf(false)
     private var screenCaptureResultCode: Int? = null
@@ -89,19 +99,12 @@ class MainActivity : ComponentActivity() {
     // Dialog状态管理
     private var showLanguageDialog by mutableStateOf(false)
     private var showModelSetupDialog by mutableStateOf(false)
+    // dialogQueue: 用于顺序显示多个Dialog，避免同时弹出
     private var dialogQueue = mutableStateListOf<String>()
 
     companion object {
         const val DIALOG_LANGUAGE = "language"
         const val DIALOG_MODEL_SETUP = "model_setup"
-    }
-
-    /**
-     * 应用语言配置
-     * 在Activity创建前应用用户选择的语言设置
-     */
-    override fun attachBaseContext(newBase: Context) {
-        super.attachBaseContext(LanguageUtil.attachBaseContext(newBase))
     }
 
     // 截图权限请求

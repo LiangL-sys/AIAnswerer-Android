@@ -14,13 +14,24 @@ import android.os.Handler
 import android.os.Looper
 import android.util.DisplayMetrics
 import android.view.WindowManager
+import com.hwb.aianswerer.utils.AppLog
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 
 /**
- * 截图管理器
- * 使用MediaProjection API进行屏幕截图
+ * 截图管理器。
+ *
+ * MediaProjection 生命周期：
+ *   调用方通过 createScreenCaptureIntent() 获取权限 Intent，拿到 result 后
+ *   调用 initMediaProjection() 初始化。initMediaProjection 会先 release 旧实例再重建，
+ *   确保 MediaProjection 与最新的权限数据绑定。
+ *
+ * VirtualDisplay 复用策略：
+ *   VirtualDisplay 和 ImageReader 在首次截图时创建并保持存活，不再每次截图都重建，
+ *   避免了频繁创建/销毁 VirtualDisplay 的开销和可能的闪烁。
+ *   仅在 MediaProjection stop 回调或主动 release() 时清理。
  */
 class ScreenCaptureManager(private val context: Context) {
 
@@ -39,7 +50,7 @@ class ScreenCaptureManager(private val context: Context) {
         return projectionManager.createScreenCaptureIntent()
     }
 
-    // 保存权限数据，用于重新创建MediaProjection
+    // 保存权限数据，用于在MediaProjection被释放后重新创建
     private var savedResultCode: Int? = null
     private var savedData: Intent? = null
 
@@ -78,8 +89,10 @@ class ScreenCaptureManager(private val context: Context) {
                         }
                     }, Handler(Looper.getMainLooper()))
                 }
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
-            e.printStackTrace()
+            AppLog.e("创建MediaProjection失败", e)
             mediaProjection = null
         }
     }
@@ -105,12 +118,12 @@ class ScreenCaptureManager(private val context: Context) {
             val height = metrics.heightPixels
             val density = metrics.densityDpi
 
-            // 如果VirtualDisplay和ImageReader不存在，创建它们（只创建一次）
+            // 复用已有的VirtualDisplay和ImageReader，避免重复创建造成资源浪费
             if (virtualDisplay == null || imageReader == null) {
-                // 创建ImageReader
+                // maxImages=2: 允许双缓冲，避免截图时阻塞
                 imageReader = ImageReader.newInstance(width, height, PixelFormat.RGBA_8888, 2)
 
-                // 创建虚拟显示（保持一直存在）
+                // VIRTUAL_DISPLAY_FLAG_AUTO_MIRROR: 自动镜像显示内容
                 virtualDisplay = mediaProjection?.createVirtualDisplay(
                     "ScreenCapture",
                     width,
@@ -137,6 +150,8 @@ class ScreenCaptureManager(private val context: Context) {
                             continuation.resume(bitmap)
                         }
                     }
+                } catch (e: CancellationException) {
+                    throw e
                 } catch (e: Exception) {
                     if (!continuation.isCompleted) {
                         continuation.resumeWithException(e)
@@ -148,6 +163,8 @@ class ScreenCaptureManager(private val context: Context) {
             continuation.invokeOnCancellation {
                 // 取消时也不清理，保留VirtualDisplay
             }
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             if (!continuation.isCompleted) {
                 continuation.resumeWithException(e)
@@ -156,13 +173,16 @@ class ScreenCaptureManager(private val context: Context) {
     }
 
     /**
-     * 将Image转换为Bitmap
+     * Image → Bitmap 转换。
+     * 某些设备上 rowStride > pixelStride * width（即行末尾有 padding），
+     * 需要先以原始 stride 创建 Bitmap 再裁剪掉 padding 区域。
      */
     private fun imageToBitmap(image: Image, width: Int, height: Int): Bitmap {
         val planes = image.planes
         val buffer = planes[0].buffer
         val pixelStride = planes[0].pixelStride
         val rowStride = planes[0].rowStride
+        // rowPadding: 每行末尾的填充字节数
         val rowPadding = rowStride - pixelStride * width
 
         val bitmap = Bitmap.createBitmap(
@@ -172,10 +192,10 @@ class ScreenCaptureManager(private val context: Context) {
         )
         bitmap.copyPixelsFromBuffer(buffer)
 
-        // 裁剪多余的部分
         return if (rowPadding == 0) {
             bitmap
         } else {
+            // 裁剪掉行填充部分，得到精确的屏幕截图
             Bitmap.createBitmap(bitmap, 0, 0, width, height)
         }
     }

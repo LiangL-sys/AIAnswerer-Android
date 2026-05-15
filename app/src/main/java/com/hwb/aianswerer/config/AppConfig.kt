@@ -1,6 +1,9 @@
 package com.hwb.aianswerer.config
 
 import android.content.Context
+import android.content.SharedPreferences
+import androidx.security.crypto.EncryptedSharedPreferences
+import androidx.security.crypto.MasterKey
 import com.hwb.aianswerer.BuildConfig
 import com.tencent.mmkv.MMKV
 
@@ -8,6 +11,7 @@ import com.tencent.mmkv.MMKV
  * 应用配置管理类
  * 负责保存和读取用户的API配置、语言设置等
  * 使用MMKV作为底层存储，提供高性能的key-value数据持久化
+ * API Key使用EncryptedSharedPreferences加密存储
  */
 object AppConfig {
 
@@ -35,14 +39,50 @@ object AppConfig {
     const val CROP_MODE_ONCE = "once"           // 部分识别（单次）
 
     private lateinit var mmkv: MMKV
+    private var securePrefs: SharedPreferences? = null
 
     /**
-     * 初始化MMKV
-     * 应该在Application.onCreate()中调用
+     * 初始化MMKV和EncryptedSharedPreferences
+     * 应该在Application.attachBaseContext()中调用
      */
     fun init(context: Context) {
         MMKV.initialize(context)
         mmkv = MMKV.defaultMMKV()
+
+        try {
+            val masterKey = MasterKey.Builder(context)
+                .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
+                .build()
+
+            securePrefs = EncryptedSharedPreferences.create(
+                context,
+                "ai_answerer_secure",
+                masterKey,
+                EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
+                EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
+            )
+
+            // 迁移旧的明文API Key到加密存储
+            migrateApiKeyIfNeeded()
+        } catch (e: Exception) {
+            // EncryptedSharedPreferences 初始化失败时降级到 MMKV
+            // 常见原因：Android Keystore 不可用、模拟器兼容性问题
+            securePrefs = null
+        }
+    }
+
+    /**
+     * 将旧的明文API Key迁移到加密存储
+     */
+    private fun migrateApiKeyIfNeeded() {
+        val prefs = securePrefs ?: return
+        val mmkvKey = mmkv.decodeString(KEY_API_KEY, null)
+        if (!mmkvKey.isNullOrEmpty() && prefs.getString(KEY_API_KEY, null).isNullOrEmpty()) {
+            // 旧的明文Key存在且加密存储中没有，执行迁移
+            prefs.edit().putString(KEY_API_KEY, mmkvKey).apply()
+            // 删除旧的明文Key
+            mmkv.removeValueForKey(KEY_API_KEY)
+        }
     }
 
     // ========== API配置相关 ==========
@@ -63,18 +103,27 @@ object AppConfig {
     }
 
     /**
-     * 保存API Key
+     * 保存API Key（加密存储，降级时使用MMKV）
      */
     fun saveApiKey(key: String) {
-        mmkv.encode(KEY_API_KEY, key)
+        val prefs = securePrefs
+        if (prefs != null) {
+            prefs.edit().putString(KEY_API_KEY, key).apply()
+        } else {
+            // 降级到 MMKV
+            mmkv.encode(KEY_API_KEY, key)
+        }
     }
 
     /**
-     * 获取API Key
+     * 获取API Key（优先从加密存储读取，降级时从MMKV读取）
      * @return API Key，优先返回BuildConfig配置，其次返回用户设置值，最后返回空值
      */
     fun getApiKey(): String {
-        return mmkv.decodeString(KEY_API_KEY, BuildConfig.API_KEY) ?: ""
+        val prefs = securePrefs
+        val stored = prefs?.getString(KEY_API_KEY, null)
+            ?: mmkv.decodeString(KEY_API_KEY, null)
+        return stored?.takeIf { it.isNotEmpty() } ?: BuildConfig.API_KEY
     }
 
     /**
@@ -135,7 +184,7 @@ object AppConfig {
 
     /**
      * 获取自动提交设置
-     * @return 是否启用自动提交，默认为false
+     * @return 是否启用自动提交，默认为true
      */
     fun getAutoSubmit(): Boolean {
         return mmkv.decodeBool(KEY_AUTO_SUBMIT, true)
@@ -151,7 +200,7 @@ object AppConfig {
 
     /**
      * 获取自动复制到剪贴板设置
-     * @return 是否启用自动复制，默认为true（提升用户体验）
+     * @return 是否启用自动复制，默认为false
      */
     fun getAutoCopy(): Boolean {
         return mmkv.decodeBool(KEY_AUTO_COPY, false)

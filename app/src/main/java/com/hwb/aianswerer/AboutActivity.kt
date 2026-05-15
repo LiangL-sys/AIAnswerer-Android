@@ -39,11 +39,7 @@ import com.hwb.aianswerer.utils.LanguageUtil
 /**
  * 关于页面Activity
  */
-class AboutActivity : ComponentActivity() {
-
-    override fun attachBaseContext(newBase: Context) {
-        super.attachBaseContext(LanguageUtil.attachBaseContext(newBase))
-    }
+class AboutActivity : BaseActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -65,6 +61,7 @@ private fun handleContactFallback(
     label: String,
     toastMessage: String
 ) {
+    // 当设备上没有邮件客户端时，将邮箱地址复制到剪贴板作为回退方案
     ClipboardUtil.copyToClipboard(context, email, label)
     Toast.makeText(context, toastMessage, Toast.LENGTH_SHORT).show()
 }

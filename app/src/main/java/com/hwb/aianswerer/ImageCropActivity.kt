@@ -48,23 +48,29 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.hwb.aianswerer.models.CropRect
 import com.hwb.aianswerer.ui.theme.AIAnswererTheme
+import com.hwb.aianswerer.utils.AppLog
 import com.hwb.aianswerer.utils.ImageCropUtil
 import com.hwb.aianswerer.utils.LanguageUtil
 import kotlin.math.min
 import kotlin.math.sqrt
 
 /**
- * 图片裁剪Activity
- * 支持拖动四个角调整矩形裁剪区域
+ * 图片裁剪 Activity — 全屏 Canvas 交互裁剪。
+ *
+ * 坐标系统：
+ *   屏幕坐标（Canvas）→ 用于拖拽和渲染
+ *   图片坐标（原始像素）→ 用于最终裁剪
+ *   两者通过 imageScale 和 displayLeft/displayTop 偏移相互转换。
+ *
+ * 四角拖拽：
+ *   draggingCorner 枚举 0=左上 1=右下 2=右上 3=左下。
+ *   每个角有独立的移动范围和方向约束（左上角向右下、右下角向左上、交叉角分别控制）。
+ *   热区半径为 60f 像素。
  */
-class ImageCropActivity : ComponentActivity() {
+class ImageCropActivity : BaseActivity() {
 
     private var imagePath: String? = null
     private var bitmap: Bitmap? = null
-
-    override fun attachBaseContext(newBase: Context) {
-        super.attachBaseContext(LanguageUtil.attachBaseContext(newBase))
-    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -80,7 +86,7 @@ class ImageCropActivity : ComponentActivity() {
         try {
             bitmap = ImageCropUtil.loadBitmapFromFile(imagePath!!)
         } catch (e: Exception) {
-            e.printStackTrace()
+            AppLog.e("加载图片失败", e)
             finish()
             return
         }
@@ -193,12 +199,11 @@ fun ImageCropScreen(
     // 当前拖动的角（-1: 无, 0: 左上, 1: 右下, 2: 右上, 3: 左下）
     var draggingCorner by remember { mutableStateOf(-1) }
 
-    // 初始化裁剪矩形（在画布尺寸确定后）
+    // 初始化裁剪矩形（仅在画布尺寸确定后执行一次）
     val isInitialized = remember { mutableStateOf(false) }
     if (canvasSize.width > 0 && displayWidth > 0 && !isInitialized.value) {
-        // 如果有上一次的裁剪坐标，则将其从图片坐标转换为屏幕坐标
         if (previousCropRect != null && previousCropRect.isValid(imageWidth, imageHeight)) {
-            // 将图片坐标转换为屏幕坐标
+            // 将图片坐标转换为屏幕坐标：imageCoord * scale + offset
             topLeft = PointF(
                 displayLeft + previousCropRect.topLeft.x * imageScale,
                 displayTop + previousCropRect.topLeft.y * imageScale
@@ -219,7 +224,7 @@ fun ImageCropScreen(
         isInitialized.value = true
     }
 
-    // 转换为原始图片坐标
+    // 将屏幕坐标转换为原始图片坐标（用于最终裁剪）
     fun screenToImageCoords(point: PointF): PointF {
         val imageX = ((point.x - displayLeft) / imageScale).coerceIn(0f, imageWidth.toFloat())
         val imageY = ((point.y - displayTop) / imageScale).coerceIn(0f, imageHeight.toFloat())
@@ -269,6 +274,7 @@ fun ImageCropScreen(
                                             (touchY - bottomLeftPos.y) * (touchY - bottomLeftPos.y)
                                 )
 
+                                // 检测触摸点是否在某个角的附近（圆形热区）
                                 val touchRadius = 60f
 
                                 draggingCorner = when {
@@ -360,7 +366,8 @@ fun ImageCropScreen(
                 val cropRight = bottomRight.x.coerceIn(displayLeft, displayLeft + displayWidth)
                 val cropBottom = bottomRight.y.coerceIn(displayTop, displayTop + displayHeight)
 
-                // 绘制四个半透明遮罩区域（选择框外的部分）
+                // 四块半透明遮罩 — 用四个矩形覆盖选择区域之外的图片部分，
+                // 形成「框内亮、框外暗」的视觉对比效果
                 val maskColor = Color.Black.copy(alpha = 0.6f)
 
                 // 上方遮罩

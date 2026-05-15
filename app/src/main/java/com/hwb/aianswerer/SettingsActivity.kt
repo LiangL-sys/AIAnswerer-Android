@@ -41,13 +41,12 @@ import com.hwb.aianswerer.ui.theme.AIAnswererTheme
 import com.hwb.aianswerer.utils.LanguageUtil
 
 /**
- * 设置Activity
+ * 设置页面 — 自动提交/自动复制/显示控制/语言切换。
+ *
+ * 语言切换通过 killProcess 重启整个应用进程，而非仅重启 Activity，
+ * 因为 Application 和所有已启动的 Service 也需要重新应用语言配置。
  */
-class SettingsActivity : ComponentActivity() {
-
-    override fun attachBaseContext(newBase: Context) {
-        super.attachBaseContext(LanguageUtil.attachBaseContext(newBase))
-    }
+class SettingsActivity : BaseActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)

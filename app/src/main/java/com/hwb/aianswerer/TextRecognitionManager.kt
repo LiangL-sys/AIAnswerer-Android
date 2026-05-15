@@ -4,24 +4,26 @@ import android.graphics.Bitmap
 import com.google.mlkit.vision.common.InputImage
 import com.google.mlkit.vision.text.TextRecognition
 import com.google.mlkit.vision.text.chinese.ChineseTextRecognizerOptions
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 
 /**
- * 文本识别管理器
- * 使用ML Kit进行OCR文本识别
+ * OCR 文本识别单例。
+ * 使用 ChineseTextRecognizerOptions — 该选项同时支持中文和拉丁字符识别，
+ * 无需为英文单独配置识别器。
  */
 class TextRecognitionManager {
 
-    // 使用中文文本识别器（也支持英文）
     private val recognizer =
         TextRecognition.getClient(ChineseTextRecognizerOptions.Builder().build())
 
     /**
      * 识别图片中的文本
-     * @param bitmap 要识别的图片
-     * @return 识别出的文本
+     *
+     * 使用suspendCancellableCoroutine将ML Kit的回调式API转换为挂起函数，
+     * 每个回调都需要检查continuation.isCompleted防止重复resume导致崩溃
      */
     suspend fun recognizeText(bitmap: Bitmap): Result<String> =
         suspendCancellableCoroutine { continuation ->
@@ -63,6 +65,8 @@ class TextRecognitionManager {
                             )
                         }
                     }
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 if (!continuation.isCompleted) {
                     continuation.resumeWithException(e)
