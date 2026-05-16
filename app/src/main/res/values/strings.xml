@@ -279,4 +279,25 @@
     <string name="status_fetch_answer_failed">获取答案失败: %s</string>
     <string name="notification_channel_name">AI答题助手服务</string>
     <string name="clipboard_label">AI答案</string>
+
+    <!-- 视觉模型相关 -->
+    <string name="vision_settings_title">视觉模型设置</string>
+    <string name="vision_settings_desc">使用视觉模型分析截图，直接提取题目文本（替代OCR）</string>
+    <string name="vision_enable_label">启用视觉模型</string>
+    <string name="vision_enable_desc">使用视觉模型替代OCR识别，适合噪音较多的页面</string>
+    <string name="vision_provider_label">视觉模型接口</string>
+    <string name="vision_provider_openai_compat">OpenAI 兼容接口</string>
+    <string name="vision_provider_custom">自定义接口</string>
+    <string name="label_vision_api_url">API 地址</string>
+    <string name="hint_vision_api_url">https://api.deepseek.com/v1/chat/completions</string>
+    <string name="label_vision_api_key">API Key</string>
+    <string name="hint_vision_api_key">sk-xxxxxxxx</string>
+    <string name="label_vision_model">模型名称</string>
+    <string name="hint_vision_model">例如: deepseek-chat 或 gpt-4o-mini</string>
+    <string name="vision_reset_defaults">重置为默认值</string>
+    <string name="status_vision_analyzing">👁️ 视觉模型分析中…</string>
+    <string name="status_vision_detected_single">✅ 检测到 1 道题目</string>
+    <string name="status_vision_detected_multi">📋 检测到 %d 道题目</string>
+    <string name="status_vision_no_question">⚠️ 未检测到题目</string>
+    <string name="status_vision_fallback">⚠️ 视觉分析失败，请重试</string>
 </resources>

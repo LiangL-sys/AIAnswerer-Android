@@ -19,7 +19,6 @@ import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
-import okhttp3.CertificatePinner
 import okhttp3.ConnectionPool
 import okhttp3.logging.HttpLoggingInterceptor
 import java.util.concurrent.TimeUnit
@@ -33,19 +32,8 @@ import java.util.concurrent.TimeUnit
 class OpenAIClient {
 
     private val client: OkHttpClient by lazy {
-        // 证书固定：防止中间人攻击
-        // 注意：pin 值需要定期更新（证书轮转时）
-        // 使用 `openssl s_client -connect api.openai.com:443 | openssl x509 -pubkey -noout | openssl rsa -pubin -outform der | openssl dgst -sha256 -binary | base64` 获取
-        val certificatePinner = CertificatePinner.Builder()
-            .add("api.openai.com",
-                "sha256/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",  // 主 pin（需替换为实际值）
-                "sha256/BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB="   // 备用 pin
-            )
-            .build()
-
         OkHttpClient.Builder()
             .connectionPool(ConnectionPool(5, 5, TimeUnit.MINUTES))
-            .certificatePinner(certificatePinner)
             .connectTimeout(30, TimeUnit.SECONDS)
             .readTimeout(60, TimeUnit.SECONDS)
             .writeTimeout(30, TimeUnit.SECONDS)

@@ -36,6 +36,7 @@ import androidx.savedstate.SavedStateRegistryOwner
 import androidx.savedstate.setViewTreeSavedStateRegistryOwner
 import com.hwb.aianswerer.api.OpenAIClient
 import com.hwb.aianswerer.api.TavilyClient
+import com.hwb.aianswerer.api.vision.VisionProviderFactory
 import com.hwb.aianswerer.config.AppConfig
 import com.hwb.aianswerer.models.CropRect
 import com.hwb.aianswerer.models.formatAnswerWithConfig
@@ -461,43 +462,22 @@ class FloatingWindowService : Service(), LifecycleOwner, ViewModelStoreOwner,
     }
 
     /**
-     * OCR 识别 + 后续流程分流：
-     *   autoSubmit=true  → 跳过确认，直接调用 AI 接口
-     *   autoSubmit=false → 启动 ConfirmTextActivity 让用户编辑后再提交
+     * 处理截图后的图片
+     *
+     * 根据用户配置选择识别模式：
+     *   - OCR模式：使用ML Kit识别文本
+     *   - VLM模式：使用视觉模型提取文本和元数据
      */
     private suspend fun processBitmap(bitmap: android.graphics.Bitmap) {
         try {
-            statusMessage.value = getString(R.string.status_recognizing)
+            val useVlm = AppConfig.isVisionEnabled()
 
-            // 识别文本
-            val result = textRecognitionManager.recognizeText(bitmap)
-            bitmap.recycle()
-
-            result.onSuccess { recognizedText ->
-                statusMessage.value = getString(R.string.status_recognized)
-
-                // 从配置读取自动提交设置
-                val autoSubmit = AppConfig.getAutoSubmit()
-
-                if (autoSubmit) {
-                    // 自动提交：直接调用fetchAnswer获取答案
-                    fetchAnswer(recognizedText)
-                } else {
-                    // 显示确认对话框
-                    val intent = Intent(
-                        this@FloatingWindowService,
-                        ConfirmTextActivity::class.java
-                    ).apply {
-                        putExtra(Constants.EXTRA_RECOGNIZED_TEXT, recognizedText)
-                        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                    }
-                    startActivity(intent)
-                    // 2秒后自动关闭状态消息
-                    delay(2000)
-                    statusMessage.value = null
-                }
-            }.onFailure { error ->
-                showErrorMessage(getString(R.string.status_recognition_failed, error.message ?: ""))
+            if (useVlm) {
+                // VLM模式：使用视觉模型直接提取
+                processBitmapWithVlm(bitmap)
+            } else {
+                // OCR模式：使用ML Kit识别
+                processBitmapWithOcr(bitmap)
             }
         } catch (e: CancellationException) {
             throw e
@@ -507,10 +487,103 @@ class FloatingWindowService : Service(), LifecycleOwner, ViewModelStoreOwner,
     }
 
     /**
+     * OCR模式处理
+     */
+    private suspend fun processBitmapWithOcr(bitmap: android.graphics.Bitmap) {
+        statusMessage.value = getString(R.string.status_recognizing)
+
+        val result = textRecognitionManager.recognizeText(bitmap)
+        bitmap.recycle()
+
+        result.onSuccess { recognizedText ->
+            statusMessage.value = getString(R.string.status_recognized)
+            val autoSubmit = AppConfig.getAutoSubmit()
+
+            if (autoSubmit) {
+                fetchAnswer(recognizedText)
+            } else {
+                val intent = Intent(
+                    this@FloatingWindowService,
+                    ConfirmTextActivity::class.java
+                ).apply {
+                    putExtra(Constants.EXTRA_RECOGNIZED_TEXT, recognizedText)
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                }
+                startActivity(intent)
+                delay(2000)
+                statusMessage.value = null
+            }
+        }.onFailure { error ->
+            showErrorMessage(getString(R.string.status_recognition_failed, error.message ?: ""))
+        }
+    }
+
+    /**
+     * VLM模式处理：使用视觉模型提取文本和元数据
+     */
+    private suspend fun processBitmapWithVlm(bitmap: android.graphics.Bitmap) {
+        statusMessage.value = getString(R.string.status_vision_analyzing)
+
+        val provider = VisionProviderFactory.create()
+        if (provider == null) {
+            // Provider未创建，降级为OCR
+            AppLog.w("VisionProvider未创建，降级为OCR模式")
+            processBitmapWithOcr(bitmap)
+            return
+        }
+
+        val visionResult = provider.analyze(bitmap)
+        bitmap.recycle()
+
+        visionResult.onSuccess { filter ->
+            if (!filter.hasQuestions) {
+                showErrorMessage(getString(R.string.status_vision_no_question))
+                return
+            }
+
+            statusMessage.value = if (filter.questionCount > 1) {
+                getString(R.string.status_vision_detected_multi, filter.questionCount)
+            } else {
+                getString(R.string.status_vision_detected_single)
+            }
+
+            // 使用VLM提取的文本
+            val text = filter.extractedText
+            if (text.isBlank()) {
+                showErrorMessage("视觉模型未提取到文本")
+                return
+            }
+
+            val autoSubmit = AppConfig.getAutoSubmit()
+            if (autoSubmit) {
+                fetchAnswer(text, filter)
+            } else {
+                val intent = Intent(
+                    this@FloatingWindowService,
+                    ConfirmTextActivity::class.java
+                ).apply {
+                    putExtra(Constants.EXTRA_RECOGNIZED_TEXT, text)
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                }
+                startActivity(intent)
+                delay(2000)
+                statusMessage.value = null
+            }
+        }.onFailure { e ->
+            AppLog.w("VLM分析失败，降级为OCR模式", e)
+            statusMessage.value = getString(R.string.status_vision_fallback)
+            // 降级为OCR模式需要重新获取bitmap，但此时已recycle
+            // 提示用户重试
+            showErrorMessage("视觉分析失败，请重试或切换为OCR模式")
+        }
+    }
+
+    /**
      * 获取问题答案
      * @param text 问题文本
+     * @param visionResult 可选的VLM分析结果，用于搜索关键词提取
      */
-    private fun fetchAnswer(text: String) {
+    private fun fetchAnswer(text: String, visionResult: com.hwb.aianswerer.api.vision.VisionFilterResult? = null) {
         currentFetchJob?.cancel()
         currentFetchJob = lifecycleScope.launch {
             try {
@@ -520,79 +593,78 @@ class FloatingWindowService : Service(), LifecycleOwner, ViewModelStoreOwner,
                     return@launch
                 }
 
-                statusMessage.value = getString(R.string.status_getting_answer)
-
                 // 从配置读取答题设置
                 val questionTypes = AppConfig.getQuestionTypes()
                 val questionScope = AppConfig.getQuestionScope()
                 val autoCopy = AppConfig.getAutoCopy()
 
-                // Tavily 联网搜索（可选，失败不阻断主流程）
-                // 仅单题时触发搜索：检测文本中是否包含多题编号模式
+                // ========== 多题模式：VLM分离题目 + 单独搜索 ==========
+                if (visionResult != null && visionResult.questions.size > 1) {
+                    fetchAnswerMultiQuestion(visionResult, questionTypes, questionScope, autoCopy)
+                    return@launch
+                }
+
+                // ========== 单题模式 ==========
                 var searchContext = ""
-                val multiQuestionPattern = Regex("""[1-9]\s*[.、．]\s*\S""")
-                val isSingleQuestion = !multiQuestionPattern.containsMatchIn(text)
-                if (isSingleQuestion && AppConfig.isTavilyConfigValid()) {
-                    statusMessage.value = getString(R.string.status_searching)
-                    // 从 OCR 文本中提取搜索关键词：问号所在行（题干）+ 选项行
-                    val lines = text.lines()
-                    val questionLine = lines.firstOrNull { it.contains("?") || it.contains("？") }?.trim()
-                    val optionLines = lines.filter { it.trim().matches(Regex("""^[A-Da-d][.、．)\s].*""")) }
-                        .map { it.trim() }
-                    val searchQuery = if (!questionLine.isNullOrBlank()) {
-                        (listOf(questionLine) + optionLines).joinToString(" ")
-                    } else {
-                        text  // 无法提取时降级为原文
-                    }
-                    AppLog.d("Tavily 搜索查询: $searchQuery")
-                    val tavilyResult = TavilyClient.getInstance().simpleSearch(
-                        query = searchQuery,
-                        maxResults = 3,
-                        includeAnswer = true
-                    )
-                    tavilyResult.onSuccess { results ->
-                        searchContext = results.joinToString("\n") {
-                            "【${it.title}】${it.content}"
+
+                // VLM模式：使用VLM提供的搜索关键词
+                if (visionResult != null) {
+                    if (visionResult.searchKeywords.isNotBlank() && AppConfig.isTavilyConfigValid()) {
+                        statusMessage.value = getString(R.string.status_searching)
+                        AppLog.d("Tavily搜索(VLM关键词): ${visionResult.searchKeywords}")
+
+                        val tavilyResult = TavilyClient.getInstance().simpleSearch(
+                            query = visionResult.searchKeywords,
+                            maxResults = 3,
+                            includeAnswer = true
+                        )
+                        tavilyResult.onSuccess { results ->
+                            searchContext = results.joinToString("\n") {
+                                "【${it.title}】${it.content}"
+                            }
+                            AppLog.d("Tavily搜索完成: ${results.size}条")
                         }
-                        AppLog.d("Tavily 搜索结果已注入上下文: ${results.size} 条")
+                    }
+                    // VLM模式下不使用正则，直接进入LLM答题
+                } else {
+                    // OCR模式：使用正则提取搜索关键词
+                    val multiQuestionPattern = Regex("""[1-9]\s*[.、．]\s*\S""")
+                    val isMultiQuestion = multiQuestionPattern.containsMatchIn(text)
+
+                    if (!isMultiQuestion && AppConfig.isTavilyConfigValid()) {
+                        statusMessage.value = getString(R.string.status_searching)
+                        val lines = text.lines()
+                        val questionLine = lines.firstOrNull { it.contains("?") || it.contains("？") }?.trim()
+                        val optionLines = lines.filter { it.trim().matches(Regex("""^[A-Da-d][.、．)\s].*""")) }
+                            .map { it.trim() }
+                        val searchQuery = if (!questionLine.isNullOrBlank()) {
+                            (listOf(questionLine) + optionLines).joinToString(" ")
+                        } else {
+                            text
+                        }
+                        AppLog.d("Tavily搜索(正则提取): $searchQuery")
+                        val tavilyResult = TavilyClient.getInstance().simpleSearch(
+                            query = searchQuery,
+                            maxResults = 3,
+                            includeAnswer = true
+                        )
+                        tavilyResult.onSuccess { results ->
+                            searchContext = results.joinToString("\n") {
+                                "【${it.title}】${it.content}"
+                            }
+                            AppLog.d("Tavily搜索结果已注入上下文: ${results.size} 条")
+                        }
                     }
                 }
 
+                // ========== LLM答题 ==========
                 statusMessage.value = getString(R.string.status_getting_answer)
 
                 val apiClient = OpenAIClient.getInstance()
                 val result = apiClient.analyzeQuestion(text, questionTypes, questionScope, searchContext)
 
                 result.onSuccess { aiAnswers ->
-                    // 读取答题卡片显示配置
-                    val showQuestion =
-                        AppConfig.getShowAnswerCardQuestion()
-                    val showOptions = AppConfig.getShowAnswerCardOptions()
-
-                    // 格式化所有答案
-                    val formattedAnswer = if (aiAnswers.size == 1) {
-                        // 单个答案，直接格式化
-                        aiAnswers.first().formatAnswerWithConfig(showQuestion, showOptions)
-                    } else {
-                        // 多个答案，用分隔线连接
-                        aiAnswers.mapIndexed { index, answer ->
-                            val header = "━━━ 第 ${index + 1} 题 ━━━\n"
-                            header + answer.formatAnswerWithConfig(showQuestion, showOptions)
-                        }.joinToString("\n\n")
-                    }
-
-                    // 根据设置决定是否复制到剪贴板
-                    if (autoCopy) {
-                        ClipboardUtil.copyToClipboard(this@FloatingWindowService, formattedAnswer)
-                    }
-
-                    // 显示在悬浮窗
-                    answerText.value = formattedAnswer
-                    showAnswer.value = true
-
-                    statusMessage.value = if (autoCopy) getString(R.string.status_answer_copied) else getString(R.string.status_answer_generated)
-                    delay(2000)
-                    statusMessage.value = null
+                    handleAnswerSuccess(aiAnswers, autoCopy)
                 }.onFailure { error ->
                     showErrorMessage(getString(R.string.status_ai_analysis_failed, error.message ?: ""))
                 }
@@ -602,6 +674,97 @@ class FloatingWindowService : Service(), LifecycleOwner, ViewModelStoreOwner,
                 showErrorMessage(getString(R.string.status_fetch_answer_failed, e.message ?: ""))
             }
         }
+    }
+
+    /**
+     * 多题模式：对每道题单独搜索，然后逐题调用LLM
+     */
+    private suspend fun fetchAnswerMultiQuestion(
+        visionResult: com.hwb.aianswerer.api.vision.VisionFilterResult,
+        questionTypes: Set<String>,
+        questionScope: String,
+        autoCopy: Boolean
+    ) {
+        val questions = visionResult.questions
+        val totalQuestions = questions.size
+        AppLog.d("多题模式: $totalQuestions 道题目")
+
+        // 为每道题搜索参考资料并单独调用LLM
+        val allAnswers = mutableListOf<com.hwb.aianswerer.models.AIAnswer>()
+
+        for ((idx, question) in questions.withIndex()) {
+            if (question.text.isBlank()) continue
+
+            // 搜索参考资料
+            var searchContext = ""
+            if (question.searchKeywords.isNotBlank() && AppConfig.isTavilyConfigValid()) {
+                statusMessage.value = getString(R.string.status_searching) + " (${idx + 1}/$totalQuestions)"
+                AppLog.d("Tavily搜索(题目${idx + 1}): ${question.searchKeywords}")
+
+                val tavilyResult = TavilyClient.getInstance().simpleSearch(
+                    query = question.searchKeywords,
+                    maxResults = 2,
+                    includeAnswer = true
+                )
+                tavilyResult.onSuccess { results ->
+                    searchContext = results.joinToString("\n") {
+                        "【${it.title}】${it.content}"
+                    }
+                    AppLog.d("题目${idx + 1}搜索完成: ${results.size}条")
+                }
+            }
+
+            // 调用LLM答题
+            statusMessage.value = getString(R.string.status_getting_answer) + " (${idx + 1}/$totalQuestions)"
+
+            val apiClient = OpenAIClient.getInstance()
+            val result = apiClient.analyzeQuestion(question.text, questionTypes, questionScope, searchContext)
+
+            result.onSuccess { answers ->
+                allAnswers.addAll(answers)
+                AppLog.d("题目${idx + 1}答题完成: ${answers.size}个答案")
+            }.onFailure { error ->
+                AppLog.e("题目${idx + 1}答题失败: ${error.message}")
+            }
+        }
+
+        // 显示所有答案
+        if (allAnswers.isNotEmpty()) {
+            handleAnswerSuccess(allAnswers, autoCopy)
+        } else {
+            showErrorMessage(getString(R.string.status_ai_analysis_failed, "所有题目答题失败"))
+        }
+    }
+
+    /**
+     * 处理答题成功后的显示逻辑
+     */
+    private suspend fun handleAnswerSuccess(
+        aiAnswers: List<com.hwb.aianswerer.models.AIAnswer>,
+        autoCopy: Boolean
+    ) {
+        val showQuestion = AppConfig.getShowAnswerCardQuestion()
+        val showOptions = AppConfig.getShowAnswerCardOptions()
+
+        val formattedAnswer = if (aiAnswers.size == 1) {
+            aiAnswers.first().formatAnswerWithConfig(showQuestion, showOptions)
+        } else {
+            aiAnswers.mapIndexed { index, answer ->
+                val header = "━━━ 第 ${index + 1} 题 ━━━\n"
+                header + answer.formatAnswerWithConfig(showQuestion, showOptions)
+            }.joinToString("\n\n")
+        }
+
+        if (autoCopy) {
+            ClipboardUtil.copyToClipboard(this@FloatingWindowService, formattedAnswer)
+        }
+
+        answerText.value = formattedAnswer
+        showAnswer.value = true
+
+        statusMessage.value = if (autoCopy) getString(R.string.status_answer_copied) else getString(R.string.status_answer_generated)
+        delay(2000)
+        statusMessage.value = null
     }
 
     private fun createNotificationChannel() {

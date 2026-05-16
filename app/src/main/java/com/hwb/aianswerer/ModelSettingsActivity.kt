@@ -41,6 +41,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.hwb.aianswerer.api.OpenAIClient
 import com.hwb.aianswerer.api.TavilyClient
+import com.hwb.aianswerer.api.vision.OpenAIVisionConfig
+import com.hwb.aianswerer.api.vision.OpenAIVisionProvider
 import com.hwb.aianswerer.config.AppConfig
 import com.hwb.aianswerer.ui.components.AppTextField
 import com.hwb.aianswerer.ui.components.PasswordTextField
@@ -118,9 +120,16 @@ fun ModelSettingsScreen(
     var tavilyEnabled by remember { mutableStateOf(AppConfig.getTavilyEnabled()) }
     var tavilyApiKey by remember { mutableStateOf(AppConfig.getTavilyApiKey()) }
 
+    // 视觉模型配置
+    var visionEnabled by remember { mutableStateOf(AppConfig.isVisionEnabled()) }
+    var visionApiUrl by remember { mutableStateOf(AppConfig.getVisionBaseUrl()) }
+    var visionApiKey by remember { mutableStateOf(AppConfig.getVisionApiKey()) }
+    var visionModelName by remember { mutableStateOf(AppConfig.getVisionModelName()) }
+
     // 测试连接状态管理
     var testState by remember { mutableStateOf<TestConnectionState>(TestConnectionState.Idle) }
     var tavilyTestState by remember { mutableStateOf<TestConnectionState>(TestConnectionState.Idle) }
+    var visionTestState by remember { mutableStateOf<TestConnectionState>(TestConnectionState.Idle) }
     val snackbarHostState = remember { SnackbarHostState() }
     val coroutineScope = rememberCoroutineScope()
 
@@ -422,6 +431,204 @@ fun ModelSettingsScreen(
                         Button(
                             onClick = {
                                 AppConfig.saveTavilyApiKey(tavilyApiKey)
+                                Toast.makeText(
+                                    MyApplication.getAppContext(),
+                                    MyApplication.getString(R.string.toast_settings_saved),
+                                    Toast.LENGTH_SHORT
+                                ).show()
+                            },
+                            modifier = Modifier.fillMaxWidth(),
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = MaterialTheme.colorScheme.secondary
+                            )
+                        ) {
+                            Text(
+                                text = stringResource(R.string.button_save),
+                                style = MaterialTheme.typography.labelLarge,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            // ========== 视觉模型配置 ==========
+            Card(modifier = Modifier.fillMaxWidth()) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp)
+                ) {
+                    Text(
+                        text = stringResource(R.string.vision_settings_title),
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier.padding(bottom = 4.dp)
+                    )
+                    Text(
+                        text = stringResource(R.string.vision_settings_desc),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(bottom = 12.dp)
+                    )
+
+                    // 启用开关
+                    androidx.compose.foundation.layout.Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = androidx.compose.foundation.layout.Arrangement.SpaceBetween,
+                        verticalAlignment = androidx.compose.ui.Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = stringResource(R.string.vision_enable_label),
+                                style = MaterialTheme.typography.titleSmall,
+                                fontWeight = FontWeight.Medium
+                            )
+                            Text(
+                                text = stringResource(R.string.vision_enable_desc),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.padding(top = 4.dp)
+                            )
+                        }
+                        Switch(
+                            checked = visionEnabled,
+                            onCheckedChange = {
+                                visionEnabled = it
+                                AppConfig.saveVisionEnabled(it)
+                            }
+                        )
+                    }
+
+                    // 模型名称输入（启用时显示）
+                    if (visionEnabled) {
+                        Spacer(modifier = Modifier.height(12.dp))
+
+                        // API地址输入
+                        AppTextField(
+                            value = visionApiUrl,
+                            onValueChange = { visionApiUrl = it },
+                            label = stringResource(R.string.label_vision_api_url),
+                            placeholder = stringResource(R.string.hint_vision_api_url),
+                            isPassword = false,
+                            singleLine = false,
+                            maxLines = 3,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+
+                        Spacer(modifier = Modifier.height(12.dp))
+
+                        // API Key输入
+                        PasswordTextField(
+                            value = visionApiKey,
+                            onValueChange = { visionApiKey = it },
+                            label = stringResource(R.string.label_vision_api_key),
+                            placeholder = stringResource(R.string.hint_vision_api_key),
+                            modifier = Modifier.fillMaxWidth()
+                        )
+
+                        Spacer(modifier = Modifier.height(12.dp))
+
+                        // 模型名称输入
+                        AppTextField(
+                            value = visionModelName,
+                            onValueChange = { visionModelName = it },
+                            label = stringResource(R.string.label_vision_model),
+                            placeholder = stringResource(R.string.hint_vision_model),
+                            isPassword = false,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+
+                        Spacer(modifier = Modifier.height(12.dp))
+
+                        // 测试连接按钮
+                        OutlinedButton(
+                            onClick = {
+                                coroutineScope.launch {
+                                    visionTestState = TestConnectionState.Testing
+
+                                    val config = OpenAIVisionConfig(
+                                        baseUrl = visionApiUrl,
+                                        apiKey = visionApiKey,
+                                        modelName = visionModelName
+                                    )
+                                    val provider = OpenAIVisionProvider(config)
+                                    val result = provider.testConnection()
+
+                                    result.onSuccess {
+                                        visionTestState = TestConnectionState.Success
+                                        snackbarHostState.showSnackbar(
+                                            message = successMessage,
+                                            duration = SnackbarDuration.Short
+                                        )
+                                        visionTestState = TestConnectionState.Idle
+                                    }.onFailure { error ->
+                                        val errorMsg = error.message ?: MyApplication.getString(R.string.error_unknown)
+                                        visionTestState = TestConnectionState.Error(errorMsg)
+                                        snackbarHostState.showSnackbar(
+                                            message = failedMessageTemplate.format(errorMsg),
+                                            duration = SnackbarDuration.Long
+                                        )
+                                        visionTestState = TestConnectionState.Idle
+                                    }
+                                }
+                            },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(48.dp),
+                            enabled = visionTestState !is TestConnectionState.Testing && visionApiUrl.isNotBlank() && visionApiKey.isNotBlank() && visionModelName.isNotBlank(),
+                            colors = ButtonDefaults.outlinedButtonColors()
+                        ) {
+                            if (visionTestState is TestConnectionState.Testing) {
+                                CircularProgressIndicator(
+                                    modifier = Modifier.size(18.dp),
+                                    strokeWidth = 2.dp
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text(
+                                    text = stringResource(R.string.button_testing),
+                                    style = MaterialTheme.typography.labelLarge
+                                )
+                            } else {
+                                Text(
+                                    text = stringResource(R.string.button_test_connection),
+                                    style = MaterialTheme.typography.labelLarge,
+                                    fontWeight = FontWeight.Medium
+                                )
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(12.dp))
+
+                        // 保存按钮
+                        Button(
+                            onClick = {
+                                // 验证输入
+                                if (visionApiUrl.isBlank() || visionApiKey.isBlank() || visionModelName.isBlank()) {
+                                    Toast.makeText(
+                                        MyApplication.getAppContext(),
+                                        MyApplication.getString(R.string.toast_settings_error),
+                                        Toast.LENGTH_SHORT
+                                    ).show()
+                                    return@Button
+                                }
+
+                                if (!visionApiUrl.startsWith("http")) {
+                                    Toast.makeText(
+                                        MyApplication.getAppContext(),
+                                        MyApplication.getString(R.string.toast_settings_error),
+                                        Toast.LENGTH_SHORT
+                                    ).show()
+                                    return@Button
+                                }
+
+                                // 保存配置
+                                AppConfig.saveVisionBaseUrl(visionApiUrl)
+                                AppConfig.saveVisionApiKey(visionApiKey)
+                                AppConfig.saveVisionModelName(visionModelName)
+
                                 Toast.makeText(
                                     MyApplication.getAppContext(),
                                     MyApplication.getString(R.string.toast_settings_saved),

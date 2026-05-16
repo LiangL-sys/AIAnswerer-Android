@@ -5,6 +5,7 @@ import android.content.SharedPreferences
 import androidx.security.crypto.EncryptedSharedPreferences
 import androidx.security.crypto.MasterKey
 import com.hwb.aianswerer.BuildConfig
+import com.hwb.aianswerer.api.vision.VisionProviderFactory
 import com.tencent.mmkv.MMKV
 
 /**
@@ -33,6 +34,14 @@ object AppConfig {
     private const val KEY_FLOAT_BUTTON_SIZE = "float_button_size"
     private const val KEY_FLOAT_BUTTON_ALPHA = "float_button_alpha"
     private const val KEY_FLOAT_CARD_ALPHA = "float_card_alpha"
+    private const val KEY_VISION_ENABLED = "vision_enabled"
+    private const val KEY_VISION_PROVIDER_ID = "vision_provider_id"
+    private const val KEY_VISION_BASE_URL = "vision_base_url"
+    private const val KEY_VISION_API_KEY = "vision_api_key"
+    private const val KEY_VISION_MODEL_NAME = "vision_model_name"
+    private const val KEY_VISION_TEMPERATURE = "vision_temperature"
+    private const val KEY_VISION_MAX_TOKENS = "vision_max_tokens"
+    private const val KEY_VISION_JSON_MODE = "vision_json_mode"
 
     // 语言代码常量
     const val LANGUAGE_ZH = "zh"
@@ -347,6 +356,147 @@ object AppConfig {
      */
     fun isTavilyConfigValid(): Boolean {
         return getTavilyEnabled() && getTavilyApiKey().isNotBlank()
+    }
+
+    // ========== 视觉模型统一配置 ==========
+
+    /**
+     * 是否启用视觉过滤
+     */
+    fun isVisionEnabled(): Boolean {
+        return mmkv.decodeBool(KEY_VISION_ENABLED, false)
+    }
+
+    /**
+     * 保存视觉过滤启用状态
+     */
+    fun saveVisionEnabled(enabled: Boolean) {
+        mmkv.encode(KEY_VISION_ENABLED, enabled)
+    }
+
+    /**
+     * 获取视觉模型 Provider ID
+     */
+    fun getVisionProviderId(): String {
+        return mmkv.decodeString(KEY_VISION_PROVIDER_ID, "openai_compat") ?: "openai_compat"
+    }
+
+    /**
+     * 保存视觉模型 Provider ID
+     */
+    fun saveVisionProviderId(id: String) {
+        mmkv.encode(KEY_VISION_PROVIDER_ID, id)
+        VisionProviderFactory.invalidateCache()
+    }
+
+    /**
+     * 获取视觉模型 API 地址
+     */
+    fun getVisionBaseUrl(): String {
+        val saved = mmkv.decodeString(KEY_VISION_BASE_URL, null)
+        if (!saved.isNullOrBlank()) return saved
+        // 根据 provider 返回默认值
+        val meta = VisionProviderFactory.REGISTERED_PROVIDERS[getVisionProviderId()]
+        return meta?.defaultBaseUrl ?: "https://api.deepseek.com/v1/chat/completions"
+    }
+
+    /**
+     * 保存视觉模型 API 地址
+     */
+    fun saveVisionBaseUrl(url: String) {
+        mmkv.encode(KEY_VISION_BASE_URL, url)
+    }
+
+    /**
+     * 获取视觉模型 API Key（加密存储）
+     */
+    fun getVisionApiKey(): String {
+        val prefs = securePrefs
+        val stored = prefs?.getString(KEY_VISION_API_KEY, null)
+            ?: mmkv.decodeString(KEY_VISION_API_KEY, null)
+        return stored?.takeIf { it.isNotEmpty() } ?: ""
+    }
+
+    /**
+     * 保存视觉模型 API Key（加密存储）
+     */
+    fun saveVisionApiKey(key: String) {
+        val prefs = securePrefs
+        if (prefs != null) {
+            prefs.edit().putString(KEY_VISION_API_KEY, key).apply()
+        } else {
+            mmkv.encode(KEY_VISION_API_KEY, key)
+        }
+    }
+
+    /**
+     * 获取视觉模型名称
+     */
+    fun getVisionModelName(): String {
+        val saved = mmkv.decodeString(KEY_VISION_MODEL_NAME, null)
+        if (!saved.isNullOrBlank()) return saved
+        val meta = VisionProviderFactory.REGISTERED_PROVIDERS[getVisionProviderId()]
+        return meta?.defaultModel ?: "deepseek-chat"
+    }
+
+    /**
+     * 保存视觉模型名称
+     */
+    fun saveVisionModelName(name: String) {
+        mmkv.encode(KEY_VISION_MODEL_NAME, name)
+    }
+
+    /**
+     * 获取视觉模型 Temperature
+     */
+    fun getVisionTemperature(): Double {
+        return mmkv.decodeFloat(KEY_VISION_TEMPERATURE, 0.0f).toDouble()
+    }
+
+    /**
+     * 保存视觉模型 Temperature
+     */
+    fun saveVisionTemperature(t: Double) {
+        mmkv.encode(KEY_VISION_TEMPERATURE, t.toFloat())
+    }
+
+    /**
+     * 获取视觉模型 Max Tokens
+     */
+    fun getVisionMaxTokens(): Int {
+        return mmkv.decodeInt(KEY_VISION_MAX_TOKENS, 4096)
+    }
+
+    /**
+     * 保存视觉模型 Max Tokens
+     */
+    fun saveVisionMaxTokens(n: Int) {
+        mmkv.encode(KEY_VISION_MAX_TOKENS, n)
+    }
+
+    /**
+     * 获取视觉模型 JSON 模式
+     */
+    fun getVisionJsonMode(): Boolean {
+        return mmkv.decodeBool(KEY_VISION_JSON_MODE, true)
+    }
+
+    /**
+     * 保存视觉模型 JSON 模式
+     */
+    fun saveVisionJsonMode(v: Boolean) {
+        mmkv.encode(KEY_VISION_JSON_MODE, v)
+    }
+
+    /**
+     * 一键重置视觉模型配置到当前 Provider 默认值
+     */
+    fun resetVisionToProviderDefaults() {
+        val meta = VisionProviderFactory.REGISTERED_PROVIDERS[getVisionProviderId()]
+        if (meta != null) {
+            saveVisionBaseUrl(meta.defaultBaseUrl)
+            saveVisionModelName(meta.defaultModel)
+        }
     }
 
     // ========== 悬浮窗外观相关 ==========

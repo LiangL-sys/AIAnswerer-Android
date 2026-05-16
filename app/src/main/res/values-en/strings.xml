@@ -278,4 +278,25 @@
     <string name="status_fetch_answer_failed">Failed to get answer: %s</string>
     <string name="notification_channel_name">AI Answerer Service</string>
     <string name="clipboard_label">AI Answer</string>
+
+    <!-- Vision Model -->
+    <string name="vision_settings_title">Vision Model Settings</string>
+    <string name="vision_settings_desc">Use vision model to analyze screenshots and extract text (alternative to OCR)</string>
+    <string name="vision_enable_label">Enable Vision Model</string>
+    <string name="vision_enable_desc">Use vision model instead of OCR, better for noisy pages</string>
+    <string name="vision_provider_label">Vision API Provider</string>
+    <string name="vision_provider_openai_compat">OpenAI Compatible</string>
+    <string name="vision_provider_custom">Custom API</string>
+    <string name="label_vision_api_url">API URL</string>
+    <string name="hint_vision_api_url">https://api.deepseek.com/v1/chat/completions</string>
+    <string name="label_vision_api_key">API Key</string>
+    <string name="hint_vision_api_key">sk-xxxxxxxx</string>
+    <string name="label_vision_model">Model Name</string>
+    <string name="hint_vision_model">e.g. deepseek-chat or gpt-4o-mini</string>
+    <string name="vision_reset_defaults">Reset to Defaults</string>
+    <string name="status_vision_analyzing">👁️ Vision analyzing…</string>
+    <string name="status_vision_detected_single">✅ Detected 1 question</string>
+    <string name="status_vision_detected_multi">📋 Detected %d questions</string>
+    <string name="status_vision_no_question">⚠️ No questions detected</string>
+    <string name="status_vision_fallback">⚠️ Vision failed, please retry</string>
 </resources>
