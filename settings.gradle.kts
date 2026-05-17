@@ -1,10 +1,5 @@
 pluginManagement {
     repositories {
-
-        maven { url = uri("https://maven.aliyun.com/repository/google") }        // ← 新增
-        maven { url = uri("https://maven.aliyun.com/repository/public") }        // ← 新增
-        maven { url = uri("https://maven.aliyun.com/repository/gradle-plugin") } // ← 新增
-        maven { url = uri("https://maven.aliyun.com/repository/central") }       // ← 新增
         google {
             content {
                 includeGroupByRegex("com\\.android.*")
@@ -14,17 +9,22 @@ pluginManagement {
         }
         mavenCentral()
         gradlePluginPortal()
+        // 阿里云镜像（国内加速，国外备用）
+        maven { url = uri("https://maven.aliyun.com/repository/google") }
+        maven { url = uri("https://maven.aliyun.com/repository/public") }
+        maven { url = uri("https://maven.aliyun.com/repository/gradle-plugin") }
+        maven { url = uri("https://maven.aliyun.com/repository/central") }
     }
 }
 dependencyResolutionManagement {
     repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
     repositories {
-
-        maven { url = uri("https://maven.aliyun.com/repository/google") }    // ← 新增
-        maven { url = uri("https://maven.aliyun.com/repository/public") }    // ← 新增
-        maven { url = uri("https://maven.aliyun.com/repository/central") }   // ← 新增
         google()
         mavenCentral()
+        // 阿里云镜像（国内加速，国外备用）
+        maven { url = uri("https://maven.aliyun.com/repository/google") }
+        maven { url = uri("https://maven.aliyun.com/repository/public") }
+        maven { url = uri("https://maven.aliyun.com/repository/central") }
     }
 }
 
