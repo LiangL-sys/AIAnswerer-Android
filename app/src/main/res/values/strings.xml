@@ -305,4 +305,22 @@
     <string name="status_vision_detected_multi">📋 检测到 %d 道题目</string>
     <string name="status_vision_no_question">⚠️ 未检测到题目</string>
     <string name="status_vision_fallback">⚠️ 视觉分析失败，请重试</string>
+
+    <!-- 并发设置 -->
+    <string name="setting_parallel_title">并发答题设置</string>
+    <string name="setting_parallel_desc">多题模式下的并行处理配置</string>
+    <string name="setting_parallel_mode">启用并发模式</string>
+    <string name="setting_parallel_mode_desc">多题时同时请求AI，显著提升答题速度</string>
+    <string name="setting_max_concurrency">最大并发数：%d</string>
+    <string name="setting_max_concurrency_desc">同时处理的题目数量，过高可能触发API限流</string>
+    <string name="setting_concurrency_warning">⚠️ 并发数过高，可能触发API限流</string>
+    <string name="setting_test_concurrency">测试并发性能</string>
+    <string name="setting_test_llm">测试LLM</string>
+    <string name="setting_test_vlm">测试VLM</string>
+    <string name="setting_test_search">测试搜索</string>
+    <string name="testing_concurrency">测试中…</string>
+    <string name="test_result_success">✅ %1$s 连接成功，耗时 %2$dms</string>
+    <string name="test_result_error">❌ %1$s 连接失败：%2$s</string>
+    <string name="status_parallel_answering">🤖 答题中 (%1$d/%2$d)…</string>
+    <string name="status_parallel_partial_failed">⚠️ 部分题目答题失败，已显示成功的结果</string>
 </resources>

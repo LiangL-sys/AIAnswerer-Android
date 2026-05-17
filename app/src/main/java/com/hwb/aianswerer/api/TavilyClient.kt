@@ -186,6 +186,54 @@ class TavilyClient {
             }
         }
 
+    /**
+     * 测试Tavily API并发性能，返回响应时间（毫秒）
+     */
+    suspend fun testConcurrency(apiKey: String = AppConfig.getTavilyApiKey()): Result<Long> {
+        AppLog.d("开始测试Tavily API并发性能")
+        return withContext(Dispatchers.IO) {
+            try {
+                if (apiKey.isBlank()) {
+                    AppLog.e("Tavily API Key 未配置")
+                    return@withContext Result.failure(Exception("Tavily API Key 未配置"))
+                }
+
+                val startTime = System.currentTimeMillis()
+
+                val searchRequest = TavilySearchRequest(
+                    query = "test",
+                    max_results = 1
+                )
+                val requestBody = gson.toJson(searchRequest)
+                    .toRequestBody(jsonMediaType)
+
+                val httpRequest = Request.Builder()
+                    .url(BASE_URL)
+                    .post(requestBody)
+                    .addHeader("Content-Type", "application/json")
+                    .addHeader("Authorization", "Bearer $apiKey")
+                    .build()
+
+                AppLog.d("发送Tavily测试请求")
+                val response = client.newCall(httpRequest).execute()
+                val elapsed = System.currentTimeMillis() - startTime
+
+                if (response.isSuccessful) {
+                    AppLog.d("Tavily测试成功，耗时: ${elapsed}ms")
+                    Result.success(elapsed)
+                } else {
+                    AppLog.e("Tavily测试失败: HTTP ${response.code}")
+                    Result.failure(Exception("HTTP ${response.code}"))
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                AppLog.e("Tavily测试异常: ${e.message}")
+                Result.failure(e)
+            }
+        }
+    }
+
     companion object {
         private const val BASE_URL = "https://api.tavily.com/search"
 

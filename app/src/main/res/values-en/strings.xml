@@ -304,4 +304,22 @@
     <string name="status_vision_detected_multi">📋 Detected %d questions</string>
     <string name="status_vision_no_question">⚠️ No questions detected</string>
     <string name="status_vision_fallback">⚠️ Vision failed, please retry</string>
+
+    <!-- Parallel Settings -->
+    <string name="setting_parallel_title">Parallel Answer Settings</string>
+    <string name="setting_parallel_desc">Parallel processing configuration for multi-question mode</string>
+    <string name="setting_parallel_mode">Enable Parallel Mode</string>
+    <string name="setting_parallel_mode_desc">Process multiple questions simultaneously for faster results</string>
+    <string name="setting_max_concurrency">Max Concurrency: %d</string>
+    <string name="setting_max_concurrency_desc">Number of questions processed simultaneously, too high may trigger API rate limiting</string>
+    <string name="setting_concurrency_warning">⚠️ High concurrency may trigger API rate limiting</string>
+    <string name="setting_test_concurrency">Test Concurrency Performance</string>
+    <string name="setting_test_llm">Test LLM</string>
+    <string name="setting_test_vlm">Test VLM</string>
+    <string name="setting_test_search">Test Search</string>
+    <string name="testing_concurrency">Testing…</string>
+    <string name="test_result_success">✅ %1$s connected, took %2$dms</string>
+    <string name="test_result_error">❌ %1$s connection failed: %2$s</string>
+    <string name="status_parallel_answering">🤖 Answering (%1$d/%2$d)…</string>
+    <string name="status_parallel_partial_failed">⚠️ Some questions failed, showing successful results</string>
 </resources>

@@ -720,6 +720,57 @@ class OpenAIClient {
         }
     }
 
+    /**
+     * 测试API并发性能，返回响应时间（毫秒）
+     * 用于让用户测试当前API配置下的并发性能
+     */
+    suspend fun testConcurrency(
+        apiUrl: String = AppConfig.getApiUrl(),
+        apiKey: String = AppConfig.getApiKey(),
+        modelName: String = AppConfig.getModelName()
+    ): Result<Long> = withContext(Dispatchers.IO) {
+        try {
+            if (!AppConfig.isApiConfigValid(apiUrl, apiKey, modelName)) {
+                return@withContext Result.failure(
+                    Exception(MyApplication.getString(R.string.error_api_config_incomplete))
+                )
+            }
+
+            val startTime = System.currentTimeMillis()
+
+            val messages = listOf(
+                ChatMessage(role = "user", content = "hello")
+            )
+            val chatRequest = ChatRequest(
+                model = modelName,
+                messages = messages,
+                temperature = 0.3
+            )
+            val requestBody = gson.toJson(chatRequest)
+                .toRequestBody("application/json; charset=utf-8".toMediaType())
+
+            val request = Request.Builder()
+                .url(apiUrl)
+                .addHeader("Authorization", "Bearer $apiKey")
+                .addHeader("Content-Type", "application/json")
+                .post(requestBody)
+                .build()
+
+            val response = client.newCall(request).execute()
+            val elapsed = System.currentTimeMillis() - startTime
+
+            if (response.isSuccessful) {
+                Result.success(elapsed)
+            } else {
+                Result.failure(Exception("HTTP ${response.code}"))
+            }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
     companion object {
         // 共享 Gson 实例（线程安全）
         private val gson = Gson()

@@ -1,6 +1,8 @@
 package com.hwb.aianswerer.api.vision
 
 import android.graphics.Bitmap
+import android.graphics.Canvas
+import android.graphics.Color
 import android.util.Base64
 import com.google.gson.Gson
 import com.google.gson.JsonSyntaxException
@@ -353,6 +355,97 @@ class OpenAIVisionProvider(
         }
 
         fun clearInstance() { instance = null }
+
+        /**
+         * 测试视觉模型API并发性能，返回响应时间（毫秒）
+         * 使用当前AppConfig中的配置进行测试
+         */
+        suspend fun testConcurrency(): Result<Long> {
+            val config = OpenAIVisionConfig.fromAppConfig()
+            return testConcurrency(config)
+        }
+
+        /**
+         * 测试视觉模型API并发性能，返回响应时间（毫秒）
+         */
+        suspend fun testConcurrency(config: OpenAIVisionConfig): Result<Long> {
+            AppLog.d("开始测试VLM API并发性能, baseUrl: ${config.baseUrl}, model: ${config.modelName}")
+            return withContext(Dispatchers.IO) {
+                try {
+                    if (config.apiKey.isBlank()) {
+                        AppLog.e("视觉模型 API Key 未配置")
+                        return@withContext Result.failure(Exception("视觉模型 API Key 未配置"))
+                    }
+
+                    val startTime = System.currentTimeMillis()
+
+                    // 创建一个简单的测试图片
+                    val testBitmap = Bitmap.createBitmap(100, 100, Bitmap.Config.ARGB_8888)
+                    val canvas = Canvas(testBitmap)
+                    canvas.drawColor(Color.WHITE)
+
+                    val baos = java.io.ByteArrayOutputStream()
+                    testBitmap.compress(Bitmap.CompressFormat.JPEG, 50, baos)
+                    testBitmap.recycle()
+                    val base64 = android.util.Base64.encodeToString(
+                        baos.toByteArray(),
+                        android.util.Base64.NO_WRAP
+                    )
+
+                    // 构建请求
+                    val imageContent = ContentPart(
+                        type = "image_url",
+                        imageUrl = ImageUrlObj(url = "data:image/jpeg;base64,$base64")
+                    )
+                    val textContent = ContentPart(type = "text", text = "test")
+                    val message = OpenAIMessage(
+                        role = "user",
+                        content = listOf(imageContent, textContent)
+                    )
+                    val request = OpenAIVisionRequest(
+                        model = config.modelName,
+                        messages = listOf(message),
+                        temperature = config.temperature,
+                        maxTokens = 64
+                    )
+                    val requestBody = Gson().toJson(request)
+                        .toRequestBody("application/json; charset=utf-8".toMediaType())
+
+                    val requestBuilder = okhttp3.Request.Builder()
+                        .url(config.baseUrl)
+                        .addHeader("Authorization", "Bearer ${config.apiKey}")
+                        .addHeader("Content-Type", "application/json")
+                        .post(requestBody)
+
+                    // 添加额外headers
+                    config.extraHeaders.forEach { (key, value) ->
+                        requestBuilder.addHeader(key, value)
+                    }
+
+                    val httpClient = okhttp3.OkHttpClient.Builder()
+                        .connectTimeout(30, java.util.concurrent.TimeUnit.SECONDS)
+                        .readTimeout(60, java.util.concurrent.TimeUnit.SECONDS)
+                        .build()
+
+                    AppLog.d("发送VLM测试请求")
+                    val response = httpClient.newCall(requestBuilder.build()).execute()
+                    val elapsed = System.currentTimeMillis() - startTime
+
+                    if (response.isSuccessful) {
+                        AppLog.d("VLM测试成功，耗时: ${elapsed}ms")
+                        Result.success(elapsed)
+                    } else {
+                        AppLog.e("VLM测试失败: HTTP ${response.code}")
+                        Result.failure(Exception("HTTP ${response.code}"))
+                    }
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    AppLog.e("VLM测试异常: ${e.message}")
+                    Result.failure(e)
+                }
+            }
+        }
     }
 }
 
@@ -368,7 +461,23 @@ data class OpenAIVisionConfig(
     val maxImageWidth: Int = 1024,
     val imageQuality: Int = 75,
     val extraHeaders: Map<String, String> = emptyMap()
-)
+) {
+    companion object {
+        /**
+         * 从AppConfig创建配置实例
+         */
+        fun fromAppConfig(): OpenAIVisionConfig {
+            return OpenAIVisionConfig(
+                baseUrl = com.hwb.aianswerer.config.AppConfig.getVisionBaseUrl(),
+                apiKey = com.hwb.aianswerer.config.AppConfig.getVisionApiKey(),
+                modelName = com.hwb.aianswerer.config.AppConfig.getVisionModelName(),
+                temperature = com.hwb.aianswerer.config.AppConfig.getVisionTemperature(),
+                maxTokens = com.hwb.aianswerer.config.AppConfig.getVisionMaxTokens(),
+                useJsonMode = com.hwb.aianswerer.config.AppConfig.getVisionJsonMode()
+            )
+        }
+    }
+}
 
 // ==================== OpenAI 格式序列化模型 ====================
 

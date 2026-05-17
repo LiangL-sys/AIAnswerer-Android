@@ -42,6 +42,8 @@ object AppConfig {
     private const val KEY_VISION_MAX_TOKENS = "vision_max_tokens"
     private const val KEY_VISION_JSON_MODE = "vision_json_mode"
     private const val KEY_DARK_MODE = "dark_mode"
+    private const val KEY_PARALLEL_MODE = "parallel_mode"
+    private const val KEY_MAX_CONCURRENCY = "max_concurrency"
 
     // 语言代码常量
     const val LANGUAGE_ZH = "zh"
@@ -499,6 +501,40 @@ object AppConfig {
             saveVisionBaseUrl(meta.defaultBaseUrl)
             saveVisionModelName(meta.defaultModel)
         }
+    }
+
+    // ========== 并发答题设置相关 ==========
+
+    /**
+     * 获取并发模式是否启用
+     * @return true表示启用并发模式，false表示使用串行模式，默认为false
+     */
+    fun isParallelModeEnabled(): Boolean {
+        return mmkv.decodeBool(KEY_PARALLEL_MODE, false)
+    }
+
+    /**
+     * 保存并发模式启用状态
+     * @param enabled 是否启用并发模式
+     */
+    fun saveParallelMode(enabled: Boolean) {
+        mmkv.encode(KEY_PARALLEL_MODE, enabled)
+    }
+
+    /**
+     * 获取最大并发数
+     * @return 最大并发数，默认为3，范围1-10
+     */
+    fun getMaxConcurrency(): Int {
+        return mmkv.decodeInt(KEY_MAX_CONCURRENCY, 3)
+    }
+
+    /**
+     * 保存最大并发数
+     * @param count 最大并发数，会被限制在1-10范围内
+     */
+    fun saveMaxConcurrency(count: Int) {
+        mmkv.encode(KEY_MAX_CONCURRENCY, count.coerceIn(1, 10))
     }
 
     // ========== 悬浮窗外观相关 ==========

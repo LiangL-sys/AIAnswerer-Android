@@ -95,7 +95,7 @@ class ModelSettingsActivity : BaseActivity() {
 sealed class TestConnectionState {
     object Idle : TestConnectionState()      // 初始状态
     object Testing : TestConnectionState()   // 测试中
-    object Success : TestConnectionState()   // 测试成功
+    data class Success(val latencyMs: Long = 0) : TestConnectionState()  // 测试成功，包含延迟时间
     data class Error(val message: String) : TestConnectionState()  // 测试失败
 }
 
@@ -232,7 +232,7 @@ fun ModelSettingsScreen(
                         )
 
                         result.onSuccess {
-                            testState = TestConnectionState.Success
+                            testState = TestConnectionState.Success()
                             // 显示成功Snackbar
                             snackbarHostState.showSnackbar(
                                 message = successMessage,
@@ -394,7 +394,7 @@ fun ModelSettingsScreen(
                                     tavilyTestState = TestConnectionState.Testing
                                     val result = TavilyClient.getInstance().testConnection(tavilyApiKey)
                                     result.onSuccess {
-                                        tavilyTestState = TestConnectionState.Success
+                                        tavilyTestState = TestConnectionState.Success()
                                         snackbarHostState.showSnackbar(
                                             message = successMessage,
                                             duration = SnackbarDuration.Short
@@ -576,7 +576,7 @@ fun ModelSettingsScreen(
                                     val result = provider.testConnection()
 
                                     result.onSuccess {
-                                        visionTestState = TestConnectionState.Success
+                                        visionTestState = TestConnectionState.Success()
                                         snackbarHostState.showSnackbar(
                                             message = successMessage,
                                             duration = SnackbarDuration.Short

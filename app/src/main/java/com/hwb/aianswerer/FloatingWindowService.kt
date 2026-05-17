@@ -46,12 +46,17 @@ import com.hwb.aianswerer.utils.ClipboardUtil
 import com.hwb.aianswerer.utils.ImageCropUtil
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.async
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
+import kotlinx.coroutines.withContext
 
 
 /**
@@ -672,22 +677,37 @@ class FloatingWindowService : Service(), LifecycleOwner, ViewModelStoreOwner,
 
     /**
      * 多题模式：对每道题单独搜索，然后逐题调用LLM
+     * 支持并行模式（根据配置）
      */
     private suspend fun fetchAnswerMultiQuestion(
         visionResult: com.hwb.aianswerer.api.vision.VisionFilterResult,
         questionTypes: Set<String>,
         autoCopy: Boolean
     ) {
-        val questions = visionResult.questions
+        val questions = visionResult.questions.filter { it.text.isNotBlank() }
         val totalQuestions = questions.size
         AppLog.d("多题模式: $totalQuestions 道题目")
 
-        // 为每道题搜索参考资料并单独调用LLM
+        // 检查是否启用并行模式
+        if (AppConfig.isParallelModeEnabled()) {
+            fetchAnswerMultiQuestionParallel(questions, questionTypes, autoCopy, totalQuestions)
+        } else {
+            fetchAnswerMultiQuestionSequential(questions, questionTypes, autoCopy, totalQuestions)
+        }
+    }
+
+    /**
+     * 串行模式：逐题处理
+     */
+    private suspend fun fetchAnswerMultiQuestionSequential(
+        questions: List<com.hwb.aianswerer.api.vision.SeparatedQuestion>,
+        questionTypes: Set<String>,
+        autoCopy: Boolean,
+        totalQuestions: Int
+    ) {
         val allAnswers = mutableListOf<com.hwb.aianswerer.models.AIAnswer>()
 
         for ((idx, question) in questions.withIndex()) {
-            if (question.text.isBlank()) continue
-
             // 搜索参考资料
             var searchContext = ""
             if (question.searchKeywords.isNotBlank() && AppConfig.isTavilyConfigValid()) {
@@ -724,6 +744,100 @@ class FloatingWindowService : Service(), LifecycleOwner, ViewModelStoreOwner,
         // 显示所有答案
         if (allAnswers.isNotEmpty()) {
             handleAnswerSuccess(allAnswers, autoCopy)
+        } else {
+            showErrorMessage(getString(R.string.status_ai_analysis_failed, "所有题目答题失败"))
+        }
+    }
+
+    /**
+     * 并行模式：并发处理多道题目
+     */
+    private suspend fun fetchAnswerMultiQuestionParallel(
+        questions: List<com.hwb.aianswerer.api.vision.SeparatedQuestion>,
+        questionTypes: Set<String>,
+        autoCopy: Boolean,
+        totalQuestions: Int
+    ) {
+        val maxConcurrency = AppConfig.getMaxConcurrency()
+        val completedCount = java.util.concurrent.atomic.AtomicInteger(0)
+        val failedCount = java.util.concurrent.atomic.AtomicInteger(0)
+        val allAnswers = java.util.concurrent.ConcurrentLinkedQueue<com.hwb.aianswerer.models.AIAnswer>()
+
+        // 限制并发数
+        val semaphore = Semaphore(maxConcurrency)
+
+        AppLog.d("并行模式: $totalQuestions 道题目, 最大并发数: $maxConcurrency")
+
+        // 使用 coroutineScope 确保所有协程完成
+        kotlinx.coroutines.coroutineScope {
+            // 并发执行所有题目
+            val jobs = questions.mapIndexed { idx, question ->
+                async(Dispatchers.IO) {
+                    semaphore.withPermit {
+                        try {
+                            // 搜索参考资料
+                            var searchContext = ""
+                            if (question.searchKeywords.isNotBlank() && AppConfig.isTavilyConfigValid()) {
+                                AppLog.d("Tavily搜索(题目${idx + 1}): ${question.searchKeywords}")
+
+                                val tavilyResult = TavilyClient.getInstance().simpleSearch(
+                                    query = question.searchKeywords,
+                                    maxResults = 2,
+                                    includeAnswer = true
+                                )
+                                tavilyResult.onSuccess { results ->
+                                    searchContext = results.joinToString("\n") { result ->
+                                        "【${result.title}】${result.content}"
+                                    }
+                                    AppLog.d("题目${idx + 1}搜索完成: ${results.size}条")
+                                }
+                            }
+
+                            // 调用LLM答题
+                            val apiClient = OpenAIClient.getInstance()
+                            val result = apiClient.analyzeQuestion(question.text, questionTypes, searchContext)
+
+                            result.onSuccess { answers ->
+                                allAnswers.addAll(answers)
+                                AppLog.d("题目${idx + 1}答题完成: ${answers.size}个答案")
+                            }.onFailure { error ->
+                                AppLog.e("题目${idx + 1}答题失败: ${error.message}")
+                                failedCount.incrementAndGet()
+                            }
+
+                            // 更新进度
+                            val completed = completedCount.incrementAndGet()
+                            withContext(Dispatchers.Main) {
+                                statusMessage.value = getString(
+                                    R.string.status_parallel_answering,
+                                    completed, totalQuestions
+                                )
+                            }
+
+                        } catch (e: CancellationException) {
+                            throw e
+                        } catch (e: Exception) {
+                            AppLog.e("题目${idx + 1}处理异常: ${e.message}")
+                            failedCount.incrementAndGet()
+                        }
+                    }
+                }
+            }
+
+            // 等待所有任务完成
+            jobs.forEach { job -> job.join() }
+        }
+
+        // 显示结果
+        if (allAnswers.isNotEmpty()) {
+            // 部分失败时显示提示
+            if (failedCount.get() > 0) {
+                showStatusMessage(
+                    getString(R.string.status_parallel_partial_failed),
+                    3000
+                )
+            }
+            handleAnswerSuccess(allAnswers.toList(), autoCopy)
         } else {
             showErrorMessage(getString(R.string.status_ai_analysis_failed, "所有题目答题失败"))
         }
