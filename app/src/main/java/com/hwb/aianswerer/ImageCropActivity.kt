@@ -141,6 +141,9 @@ class ImageCropActivity : BaseActivity() {
         // 回收bitmap
         bitmap?.recycle()
         bitmap = null
+        
+        // 清理临时文件，避免残留
+        imagePath?.let { ImageCropUtil.deleteTempFile(it) }
     }
 
     companion object {

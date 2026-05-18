@@ -202,7 +202,10 @@ class ScreenCaptureManager(private val context: Context) {
             bitmap
         } else {
             // 裁剪掉行填充部分，得到精确的屏幕截图
-            Bitmap.createBitmap(bitmap, 0, 0, width, height)
+            val croppedBitmap = Bitmap.createBitmap(bitmap, 0, 0, width, height)
+            // 回收原始宽bitmap，避免内存泄漏
+            bitmap.recycle()
+            croppedBitmap
         }
     }
 

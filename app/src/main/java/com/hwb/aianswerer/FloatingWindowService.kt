@@ -78,6 +78,15 @@ class FloatingWindowService : Service(), LifecycleOwner, ViewModelStoreOwner,
     SavedStateRegistryOwner {
     private val TAG = "FloatingWindowService"
 
+    companion object {
+        const val ACTION_CROP_RESULT = "com.hwb.aianswerer.ACTION_CROP_RESULT"
+        const val EXTRA_IMAGE_PATH = "image_path"
+        
+        // Compose重组等待时间（毫秒）
+        // 确保UI状态更新完成后再进行截图
+        private const val COMPOSE_RECOMPOSITION_DELAY_MS = 150L
+    }
+
     private lateinit var windowManager: WindowManager
     private var floatingView: ComposeView? = null
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
@@ -97,6 +106,8 @@ class FloatingWindowService : Service(), LifecycleOwner, ViewModelStoreOwner,
 
     // 当前进行中的网络请求 Job，用于在 onDestroy 时取消
     private var currentFetchJob: Job? = null
+    // 用于防止并发请求的互斥锁
+    private val fetchMutex = kotlinx.coroutines.sync.Mutex()
 
     // 以下三个组件是ComposeView在Service中运行的必要条件
     private val lifecycleRegistry = LifecycleRegistry(this)
@@ -167,11 +178,6 @@ class FloatingWindowService : Service(), LifecycleOwner, ViewModelStoreOwner,
                 }
             }
         }
-    }
-
-    companion object {
-        const val ACTION_CROP_RESULT = "com.hwb.aianswerer.ACTION_CROP_RESULT"
-        const val EXTRA_IMAGE_PATH = "image_path"
     }
 
     override fun onCreate() {
@@ -348,7 +354,7 @@ class FloatingWindowService : Service(), LifecycleOwner, ViewModelStoreOwner,
 
                 // 等待 Compose 重组完成，确保上一次的答案卡片已从屏幕上移除，
                 // 否则 OCR 会识别到旧卡片内容而非新页面
-                delay(150)
+                delay(COMPOSE_RECOMPOSITION_DELAY_MS)
 
                 val bitmap = screenCaptureManager?.captureScreen()
                 if (bitmap == null) {
@@ -533,9 +539,11 @@ class FloatingWindowService : Service(), LifecycleOwner, ViewModelStoreOwner,
         }
 
         val visionResult = provider.analyze(bitmap)
-        bitmap.recycle()
 
         visionResult.onSuccess { filter ->
+            // VLM成功，现在可以回收bitmap
+            bitmap.recycle()
+
             if (!filter.hasQuestions) {
                 showErrorMessage(getString(R.string.status_vision_no_question))
                 return
@@ -570,11 +578,11 @@ class FloatingWindowService : Service(), LifecycleOwner, ViewModelStoreOwner,
                 statusMessage.value = null
             }
         }.onFailure { e ->
+            // VLM失败，bitmap仍可用于OCR降级
             AppLog.w("VLM分析失败，降级为OCR模式", e)
             statusMessage.value = getString(R.string.status_vision_fallback)
-            // 降级为OCR模式需要重新获取bitmap，但此时已recycle
-            // 提示用户重试
-            showErrorMessage("视觉分析失败，请重试或切换为OCR模式")
+            // 降级为OCR模式，复用现有的bitmap
+            processBitmapWithOcr(bitmap)
         }
     }
 
@@ -584,6 +592,12 @@ class FloatingWindowService : Service(), LifecycleOwner, ViewModelStoreOwner,
      * @param visionResult 可选的VLM分析结果，用于搜索关键词提取
      */
     private fun fetchAnswer(text: String, visionResult: com.hwb.aianswerer.api.vision.VisionFilterResult? = null) {
+        // 使用Mutex防止并发请求
+        if (!fetchMutex.tryLock()) {
+            AppLog.d("已有请求正在进行，跳过本次请求")
+            return
+        }
+        
         currentFetchJob?.cancel()
         currentFetchJob = lifecycleScope.launch {
             try {
@@ -671,6 +685,9 @@ class FloatingWindowService : Service(), LifecycleOwner, ViewModelStoreOwner,
                 throw e
             } catch (e: Exception) {
                 showErrorMessage(getString(R.string.status_fetch_answer_failed, e.message ?: ""))
+            } finally {
+                // 释放互斥锁，允许下一次请求
+                fetchMutex.unlock()
             }
         }
     }

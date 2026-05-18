@@ -138,8 +138,18 @@ object LanguageUtil {
                 context.finish()
             }
 
-            // 杀死当前进程以完全重启
-            android.os.Process.killProcess(android.os.Process.myPid())
+            // 先停止悬浮窗服务，避免幽灵通知
+            try {
+                context.stopService(android.content.Intent(context, com.hwb.aianswerer.FloatingWindowService::class.java))
+            } catch (_: Exception) {
+                // 忽略停止服务失败
+            }
+
+            // 延迟300ms确保Service.onDestroy执行后再杀进程
+            // 解决stopService异步与killProcess同步的竞态问题
+            android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
+                android.os.Process.killProcess(android.os.Process.myPid())
+            }, 300)
         }
     }
 }

@@ -1,6 +1,5 @@
 package com.hwb.aianswerer.api
 
-import com.google.gson.Gson
 import com.google.gson.JsonSyntaxException
 import com.hwb.aianswerer.Constants
 import com.hwb.aianswerer.MyApplication
@@ -12,6 +11,7 @@ import com.hwb.aianswerer.models.ChatRequest
 import com.hwb.aianswerer.models.ChatResponse
 import com.hwb.aianswerer.models.ResponseFormat
 import com.hwb.aianswerer.utils.AppLog
+import com.hwb.aianswerer.utils.JsonUtil
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -92,8 +92,8 @@ class OpenAIClient {
             val chatRequest = ChatRequest(
                 model = modelName,
                 messages = messages,
-                // temperature=0.3: 较低值使输出更确定、更集中，适合答题场景
-                temperature = 0.3
+                // 从配置读取temperature，较低值使输出更确定、更集中，适合答题场景
+                temperature = AppConfig.getLlmTemperature()
                 // 不使用 response_format，兼容更多 API 提供方（DeepSeek 等）
                 // 系统提示词已要求返回 JSON 格式
             )
@@ -111,41 +111,45 @@ class OpenAIClient {
             // 发送请求
             val response = client.newCall(request).execute()
 
-            if (!response.isSuccessful) {
-                return@withContext Result.failure(
-                    Exception(
-                        MyApplication.getString(
-                            R.string.error_api_request_failed,
-                            response.code,
-                            response.message
+            val result = response.use { resp ->
+                if (!resp.isSuccessful) {
+                    return@withContext Result.failure(
+                        Exception(
+                            MyApplication.getString(
+                                R.string.error_api_request_failed,
+                                resp.code,
+                                resp.message
+                            )
                         )
                     )
-                )
+                }
+
+                val responseBody = resp.body?.string()
+                    ?: return@withContext Result.failure(
+                        Exception(
+                            MyApplication.getString(R.string.error_empty_response)
+                        )
+                    )
+
+                // 解析响应
+                val chatResponse = gson.fromJson(responseBody, ChatResponse::class.java)
+                val answerContent = chatResponse.choices.firstOrNull()?.message?.content
+                    ?: return@withContext Result.failure(
+                        Exception(
+                            MyApplication.getString(R.string.error_no_answer_content)
+                        )
+                    )
+
+                AppLog.d("AI原始响应长度: ${answerContent.length}")
+
+                // 解析AI返回的JSON答案
+                // 策略：先直接解析原文（AI通常返回干净JSON），失败再提取+修复
+                val aiAnswers = parseJsonAnswers(answerContent)
+
+                Result.success(aiAnswers)
             }
 
-            val responseBody = response.body?.string()
-                ?: return@withContext Result.failure(
-                    Exception(
-                        MyApplication.getString(R.string.error_empty_response)
-                    )
-                )
-
-            // 解析响应
-            val chatResponse = gson.fromJson(responseBody, ChatResponse::class.java)
-            val answerContent = chatResponse.choices.firstOrNull()?.message?.content
-                ?: return@withContext Result.failure(
-                    Exception(
-                        MyApplication.getString(R.string.error_no_answer_content)
-                    )
-                )
-
-            AppLog.d("AI原始响应长度: ${answerContent.length}")
-
-            // 解析AI返回的JSON答案
-            // 策略：先直接解析原文（AI通常返回干净JSON），失败再提取+修复
-            val aiAnswers = parseJsonAnswers(answerContent)
-
-            Result.success(aiAnswers)
+            result
 
         } catch (e: CancellationException) {
             throw e
@@ -235,8 +239,8 @@ class OpenAIClient {
             }
         }
 
-        // 策略4：正则提取单个 JSON 对象
-        val objRegex = Regex("""\{[\s\S]*}""")
+        // 策略4：正则提取单个 JSON 对象（非贪婪匹配）
+        val objRegex = Regex("""\{[^{}]*}""")
         objRegex.find(trimmed)?.let { match ->
             val candidate = fixMalformedJson(match.value)
             try {
@@ -639,7 +643,7 @@ class OpenAIClient {
             val chatRequest = ChatRequest(
                 model = modelName,
                 messages = messages,
-                temperature = 0.3
+                temperature = AppConfig.getLlmTemperature()
                 // 不使用 response_format，兼容更多 API 提供方
             )
 
@@ -656,40 +660,41 @@ class OpenAIClient {
             // 发送请求
             val response = client.newCall(request).execute()
 
-            // 检查响应状态
-            if (!response.isSuccessful) {
-                val errorMessage = when (response.code) {
-                    401 -> R.string.error_api_key_invalid
-                    403 -> R.string.error_api_forbidden
-                    404 -> R.string.error_api_not_found
-                    429 -> R.string.error_api_rate_limited
-                    500, 502, 503 -> R.string.error_api_server_error
-                    else -> null
-                }?.let { MyApplication.getString(it) }
-                    ?: MyApplication.getString(
-                        R.string.error_http_status_generic,
-                        response.code,
-                        response.message
-                    )
-                return@withContext Result.failure(Exception(errorMessage))
-            }
+            response.use { resp ->
+                // 检查响应状态
+                if (!resp.isSuccessful) {
+                    val errorMessage = when (resp.code) {
+                        401 -> R.string.error_api_key_invalid
+                        403 -> R.string.error_api_forbidden
+                        404 -> R.string.error_api_not_found
+                        429 -> R.string.error_api_rate_limited
+                        500, 502, 503 -> R.string.error_api_server_error
+                        else -> null
+                    }?.let { MyApplication.getString(it) }
+                        ?: MyApplication.getString(
+                            R.string.error_http_status_generic,
+                            resp.code,
+                            resp.message
+                        )
+                    return@withContext Result.failure(Exception(errorMessage))
+                }
 
-            // 验证响应体存在
-            val responseBody = response.body?.string()
-            if (responseBody.isNullOrBlank()) {
-                return@withContext Result.failure(
-                    Exception(MyApplication.getString(R.string.error_api_empty_response))
-                )
-            }
-
-            // 尝试解析响应以验证格式正确
-            try {
-                val chatResponse = gson.fromJson(responseBody, ChatResponse::class.java)
-                if (chatResponse.choices.isEmpty()) {
+                // 验证响应体存在
+                val responseBody = resp.body?.string()
+                if (responseBody.isNullOrBlank()) {
                     return@withContext Result.failure(
-                        Exception(MyApplication.getString(R.string.error_api_response_invalid))
+                        Exception(MyApplication.getString(R.string.error_api_empty_response))
                     )
                 }
+
+                // 尝试解析响应以验证格式正确
+                try {
+                    val chatResponse = gson.fromJson(responseBody, ChatResponse::class.java)
+                    if (chatResponse.choices.isEmpty()) {
+                        return@withContext Result.failure(
+                            Exception(MyApplication.getString(R.string.error_api_response_invalid))
+                        )
+                    }
             } catch (e: JsonSyntaxException) {
                 return@withContext Result.failure(
                     Exception(MyApplication.getString(R.string.error_api_response_error))
@@ -698,7 +703,7 @@ class OpenAIClient {
 
             // 测试成功
             Result.success(MyApplication.getString(R.string.toast_connection_success))
-
+            }
         } catch (e: java.net.UnknownHostException) {
             Result.failure(Exception(MyApplication.getString(R.string.error_api_unknown_host)))
         } catch (e: java.net.SocketTimeoutException) {
@@ -772,8 +777,8 @@ class OpenAIClient {
     }
 
     companion object {
-        // 共享 Gson 实例（线程安全）
-        private val gson = Gson()
+        // 使用全局共享的Gson实例
+        private val gson = JsonUtil.gson
 
         // 双重检查锁定（DCL）单例：volatile保证可见性，synchronized保证原子性
         @Volatile

@@ -388,9 +388,9 @@ class MainActivity : BaseActivity() {
 
     override fun onDestroy() {
         super.onDestroy()
-        if (isAnswerModeActive) {
-            stopAnswerMode()
-        }
+        // 注意：不在这里停止服务
+        // 用户按返回键退出主界面时，悬浮窗服务应该继续运行
+        // 只有用户主动点击"停止"按钮才停止服务
     }
 }
 

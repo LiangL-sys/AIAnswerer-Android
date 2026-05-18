@@ -44,6 +44,7 @@ object AppConfig {
     private const val KEY_DARK_MODE = "dark_mode"
     private const val KEY_PARALLEL_MODE = "parallel_mode"
     private const val KEY_MAX_CONCURRENCY = "max_concurrency"
+    private const val KEY_LLM_TEMPERATURE = "llm_temperature"
 
     // 语言代码常量
     const val LANGUAGE_ZH = "zh"
@@ -409,6 +410,7 @@ object AppConfig {
      */
     fun saveVisionBaseUrl(url: String) {
         mmkv.encode(KEY_VISION_BASE_URL, url)
+        VisionProviderFactory.invalidateCache()
     }
 
     /**
@@ -431,6 +433,7 @@ object AppConfig {
         } else {
             mmkv.encode(KEY_VISION_API_KEY, key)
         }
+        VisionProviderFactory.invalidateCache()
     }
 
     /**
@@ -448,6 +451,7 @@ object AppConfig {
      */
     fun saveVisionModelName(name: String) {
         mmkv.encode(KEY_VISION_MODEL_NAME, name)
+        VisionProviderFactory.invalidateCache()
     }
 
     /**
@@ -462,6 +466,7 @@ object AppConfig {
      */
     fun saveVisionTemperature(t: Double) {
         mmkv.encode(KEY_VISION_TEMPERATURE, t.toFloat())
+        VisionProviderFactory.invalidateCache()
     }
 
     /**
@@ -476,6 +481,7 @@ object AppConfig {
      */
     fun saveVisionMaxTokens(n: Int) {
         mmkv.encode(KEY_VISION_MAX_TOKENS, n)
+        VisionProviderFactory.invalidateCache()
     }
 
     /**
@@ -490,6 +496,7 @@ object AppConfig {
      */
     fun saveVisionJsonMode(v: Boolean) {
         mmkv.encode(KEY_VISION_JSON_MODE, v)
+        VisionProviderFactory.invalidateCache()
     }
 
     /**
@@ -535,6 +542,24 @@ object AppConfig {
      */
     fun saveMaxConcurrency(count: Int) {
         mmkv.encode(KEY_MAX_CONCURRENCY, count.coerceIn(1, 10))
+    }
+
+    // ========== LLM Temperature 相关 ==========
+
+    /**
+     * 获取LLM Temperature
+     * @return Temperature值，默认为0.3（适合答题场景）
+     */
+    fun getLlmTemperature(): Double {
+        return mmkv.decodeFloat(KEY_LLM_TEMPERATURE, 0.3f).toDouble()
+    }
+
+    /**
+     * 保存LLM Temperature
+     * @param temperature Temperature值，会被限制在0.0-2.0范围内
+     */
+    fun saveLlmTemperature(temperature: Double) {
+        mmkv.encode(KEY_LLM_TEMPERATURE, temperature.coerceIn(0.0, 2.0).toFloat())
     }
 
     // ========== 悬浮窗外观相关 ==========

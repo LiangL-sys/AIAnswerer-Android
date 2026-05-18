@@ -1,8 +1,8 @@
 package com.hwb.aianswerer.api
 
-import com.google.gson.Gson
 import com.hwb.aianswerer.config.AppConfig
 import com.hwb.aianswerer.utils.AppLog
+import com.hwb.aianswerer.utils.JsonUtil
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -30,7 +30,7 @@ class TavilyClient {
             .build()
     }
 
-    private val gson = Gson()
+    private val gson = JsonUtil.gson
     private val jsonMediaType = "application/json; charset=utf-8".toMediaType()
 
     /**
@@ -58,24 +58,26 @@ class TavilyClient {
 
                 val response = client.newCall(httpRequest).execute()
 
-                if (!response.isSuccessful) {
-                    val errorMsg = when (response.code) {
-                        401 -> "Tavily API Key 无效"
-                        403 -> "Tavily API 访问被禁止"
-                        429 -> "Tavily 请求过于频繁，请稍后再试"
-                        else -> "Tavily 请求失败: ${response.code} ${response.message}"
+                response.use { resp ->
+                    if (!resp.isSuccessful) {
+                        val errorMsg = when (resp.code) {
+                            401 -> "Tavily API Key 无效"
+                            403 -> "Tavily API 访问被禁止"
+                            429 -> "Tavily 请求过于频繁，请稍后再试"
+                            else -> "Tavily 请求失败: ${resp.code} ${resp.message}"
+                        }
+                        return@withContext Result.failure(Exception(errorMsg))
                     }
-                    return@withContext Result.failure(Exception(errorMsg))
+
+                    val body = resp.body?.string()
+                        ?: return@withContext Result.failure(
+                            Exception("Tavily 返回空响应")
+                        )
+
+                    val searchResponse = gson.fromJson(body, TavilySearchResponse::class.java)
+                    AppLog.d("Tavily 搜索完成: ${searchResponse.results.size} 条结果")
+                    Result.success(searchResponse)
                 }
-
-                val body = response.body?.string()
-                    ?: return@withContext Result.failure(
-                        Exception("Tavily 返回空响应")
-                    )
-
-                val searchResponse = gson.fromJson(body, TavilySearchResponse::class.java)
-                AppLog.d("Tavily 搜索完成: ${searchResponse.results.size} 条结果")
-                Result.success(searchResponse)
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {

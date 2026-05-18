@@ -4,12 +4,12 @@ import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Color
 import android.util.Base64
-import com.google.gson.Gson
 import com.google.gson.JsonSyntaxException
 import com.google.gson.annotations.SerializedName
 import com.hwb.aianswerer.MyApplication
 import com.hwb.aianswerer.R
 import com.hwb.aianswerer.utils.AppLog
+import com.hwb.aianswerer.utils.JsonUtil
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -54,7 +54,7 @@ class OpenAIVisionProvider(
     override val providerId: String = "openai_compat"
     override val displayName: String = "OpenAI 兼容"
 
-    private val gson = Gson()
+    private val gson = JsonUtil.gson
 
     private val client: OkHttpClient by lazy {
         OkHttpClient.Builder()
@@ -104,27 +104,29 @@ class OpenAIVisionProvider(
 
                 val response = client.newCall(httpRequest).execute()
 
-                if (!response.isSuccessful) {
-                    val errorBody = response.body?.string() ?: ""
-                    return@withContext Result.failure(
-                        Exception("HTTP ${response.code}: $errorBody")
-                    )
+                response.use { resp ->
+                    if (!resp.isSuccessful) {
+                        val errorBody = resp.body?.string() ?: ""
+                        return@withContext Result.failure(
+                            Exception("HTTP ${resp.code}: $errorBody")
+                        )
+                    }
+
+                    val body = resp.body?.string() ?: ""
+                    val chatResp = gson.fromJson(body, OpenAIVisionResponse::class.java)
+                    val rawContent = chatResp.choices.firstOrNull()?.message?.contentRaw
+                        ?: return@withContext Result.failure(Exception("空响应"))
+
+                    // content 可能是 String 或 Any（取决于 Gson 解析）
+                    val jsonStr = when (rawContent) {
+                        is String -> rawContent
+                        else -> gson.toJson(rawContent)
+                    }
+
+                    val parsed = parseResponse(jsonStr)
+                    AppLog.d("OpenAIVision: ${parsed.questionCount}题 | ${parsed.searchKeywords}")
+                    Result.success(parsed.copy(rawResponse = body))
                 }
-
-                val body = response.body?.string() ?: ""
-                val chatResp = gson.fromJson(body, OpenAIVisionResponse::class.java)
-                val rawContent = chatResp.choices.firstOrNull()?.message?.contentRaw
-                    ?: return@withContext Result.failure(Exception("空响应"))
-
-                // content 可能是 String 或 Any（取决于 Gson 解析）
-                val jsonStr = when (rawContent) {
-                    is String -> rawContent
-                    else -> gson.toJson(rawContent)
-                }
-
-                val parsed = parseResponse(jsonStr)
-                AppLog.d("OpenAIVision: ${parsed.questionCount}题 | ${parsed.searchKeywords}")
-                Result.success(parsed.copy(rawResponse = body))
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
@@ -168,9 +170,9 @@ class OpenAIVisionProvider(
                 )
             }
 
-            // 构建最简单的测试请求（纯文本，不带图片）
+            // 构建最简单的测试请求（使用数组格式，兼容视觉API）
             val messages = listOf(
-                OpenAIMessage(role = "user", content = "hello")
+                OpenAIMessage(role = "user", content = listOf(ContentPart(type = "text", text = "hello")))
             )
 
             val request = OpenAIVisionRequest(
@@ -190,48 +192,50 @@ class OpenAIVisionProvider(
             // 发送请求
             val response = client.newCall(httpRequest).execute()
 
-            // 检查响应状态
-            if (!response.isSuccessful) {
-                val errorMessage = when (response.code) {
-                    401 -> R.string.error_api_key_invalid
-                    403 -> R.string.error_api_forbidden
-                    404 -> R.string.error_api_not_found
-                    429 -> R.string.error_api_rate_limited
-                    500, 502, 503 -> R.string.error_api_server_error
-                    else -> null
-                }?.let { MyApplication.getString(it) }
-                    ?: MyApplication.getString(
-                        R.string.error_http_status_generic,
-                        response.code,
-                        response.message
-                    )
-                return@withContext Result.failure(Exception(errorMessage))
-            }
+            response.use { resp ->
+                // 检查响应状态
+                if (!resp.isSuccessful) {
+                    val errorMessage = when (resp.code) {
+                        401 -> R.string.error_api_key_invalid
+                        403 -> R.string.error_api_forbidden
+                        404 -> R.string.error_api_not_found
+                        429 -> R.string.error_api_rate_limited
+                        500, 502, 503 -> R.string.error_api_server_error
+                        else -> null
+                    }?.let { MyApplication.getString(it) }
+                        ?: MyApplication.getString(
+                            R.string.error_http_status_generic,
+                            resp.code,
+                            resp.message
+                        )
+                    return@withContext Result.failure(Exception(errorMessage))
+                }
 
-            // 验证响应体存在
-            val responseBody = response.body?.string()
-            if (responseBody.isNullOrBlank()) {
-                return@withContext Result.failure(
-                    Exception(MyApplication.getString(R.string.error_api_empty_response))
-                )
-            }
-
-            // 尝试解析响应以验证格式正确
-            try {
-                val chatResp = gson.fromJson(responseBody, OpenAIVisionResponse::class.java)
-                if (chatResp.choices.isEmpty()) {
+                // 验证响应体存在
+                val responseBody = resp.body?.string()
+                if (responseBody.isNullOrBlank()) {
                     return@withContext Result.failure(
-                        Exception(MyApplication.getString(R.string.error_api_response_invalid))
+                        Exception(MyApplication.getString(R.string.error_api_empty_response))
                     )
                 }
-            } catch (e: JsonSyntaxException) {
-                return@withContext Result.failure(
-                    Exception(MyApplication.getString(R.string.error_api_response_error))
-                )
-            }
 
-            // 测试成功
-            Result.success(MyApplication.getString(R.string.toast_connection_success))
+                // 尝试解析响应以验证格式正确
+                try {
+                    val chatResp = gson.fromJson(responseBody, OpenAIVisionResponse::class.java)
+                    if (chatResp.choices.isEmpty()) {
+                        return@withContext Result.failure(
+                            Exception(MyApplication.getString(R.string.error_api_response_invalid))
+                        )
+                    }
+                } catch (e: JsonSyntaxException) {
+                    return@withContext Result.failure(
+                        Exception(MyApplication.getString(R.string.error_api_response_error))
+                    )
+                }
+
+                // 测试成功
+                Result.success(MyApplication.getString(R.string.toast_connection_success))
+            }
 
         } catch (e: java.net.UnknownHostException) {
             Result.failure(Exception(MyApplication.getString(R.string.error_api_unknown_host)))
@@ -408,7 +412,7 @@ class OpenAIVisionProvider(
                         temperature = config.temperature,
                         maxTokens = 64
                     )
-                    val requestBody = Gson().toJson(request)
+                    val requestBody = JsonUtil.gson.toJson(request)
                         .toRequestBody("application/json; charset=utf-8".toMediaType())
 
                     val requestBuilder = okhttp3.Request.Builder()
