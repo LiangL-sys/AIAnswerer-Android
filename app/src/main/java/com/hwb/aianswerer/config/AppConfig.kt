@@ -45,6 +45,8 @@ object AppConfig {
     private const val KEY_PARALLEL_MODE = "parallel_mode"
     private const val KEY_MAX_CONCURRENCY = "max_concurrency"
     private const val KEY_LLM_TEMPERATURE = "llm_temperature"
+    private const val KEY_REGEX_FILTER_ENABLED = "regex_filter_enabled"
+    private const val KEY_REASONING_EFFORT = "reasoning_effort"
 
     // 语言代码常量
     const val LANGUAGE_ZH = "zh"
@@ -560,6 +562,40 @@ object AppConfig {
      */
     fun saveLlmTemperature(temperature: Double) {
         mmkv.encode(KEY_LLM_TEMPERATURE, temperature.coerceIn(0.0, 2.0).toFloat())
+    }
+
+    // ========== 正则过滤相关 ==========
+
+    /**
+     * 获取正则过滤是否启用
+     * @return true表示启用正则过滤（检测到多题时跳过搜索），默认为true
+     */
+    fun isRegexFilterEnabled(): Boolean {
+        return mmkv.decodeBool(KEY_REGEX_FILTER_ENABLED, true)
+    }
+
+    /**
+     * 保存正则过滤启用状态
+     */
+    fun saveRegexFilterEnabled(enabled: Boolean) {
+        mmkv.encode(KEY_REGEX_FILTER_ENABLED, enabled)
+    }
+
+    // ========== 思考模式相关 ==========
+
+    /**
+     * 获取思考模式的reasoning_effort值
+     * @return "medium" 当启用，null 当禁用
+     */
+    fun getReasoningEffort(): String? {
+        return if (mmkv.decodeBool(KEY_REASONING_EFFORT, false)) "medium" else null
+    }
+
+    /**
+     * 保存思考模式启用状态
+     */
+    fun saveReasoningEffort(enabled: Boolean) {
+        mmkv.encode(KEY_REASONING_EFFORT, enabled)
     }
 
     // ========== 悬浮窗外观相关 ==========

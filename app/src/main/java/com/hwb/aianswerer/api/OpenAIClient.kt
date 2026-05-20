@@ -93,7 +93,8 @@ class OpenAIClient {
                 model = modelName,
                 messages = messages,
                 // 从配置读取temperature，较低值使输出更确定、更集中，适合答题场景
-                temperature = AppConfig.getLlmTemperature()
+                temperature = AppConfig.getLlmTemperature(),
+                reasoningEffort = AppConfig.getReasoningEffort()
                 // 不使用 response_format，兼容更多 API 提供方（DeepSeek 等）
                 // 系统提示词已要求返回 JSON 格式
             )

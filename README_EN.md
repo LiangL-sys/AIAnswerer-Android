@@ -98,6 +98,15 @@ com.hwb.aianswerer/
 
 ### Update Instructions
 
+#### v1.1 (Regex Filter & Thinking Mode)
+* **Regex Filter Toggle**
+  - New "Multi-question Regex Filter" toggle in web search settings (default: ON)
+  - When OFF, Tavily search still runs even if multi-question pattern is detected
+* **Thinking Mode Toggle**
+  - New "Enable Thinking Mode" toggle in LLM model settings (default: OFF)
+  - Sends `reasoning_effort: "medium"` parameter to API when enabled
+  - For reasoning models like o1, DeepSeek-R1
+
 #### v0.5 (Code Quality Optimization)
 * **Security Enhancements**
   - API Key stored with EncryptedSharedPreferences, no longer plaintext

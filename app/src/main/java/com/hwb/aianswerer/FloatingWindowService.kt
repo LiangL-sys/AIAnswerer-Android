@@ -642,7 +642,7 @@ class FloatingWindowService : Service(), LifecycleOwner, ViewModelStoreOwner,
                 } else {
                     // OCR模式：使用正则提取搜索关键词
                     val multiQuestionPattern = Regex("""[1-9]\s*[.、．]\s*\S""")
-                    val isMultiQuestion = multiQuestionPattern.containsMatchIn(text)
+                    val isMultiQuestion = AppConfig.isRegexFilterEnabled() && multiQuestionPattern.containsMatchIn(text)
 
                     if (!isMultiQuestion && AppConfig.isTavilyConfigValid()) {
                         statusMessage.value = getString(R.string.status_searching)

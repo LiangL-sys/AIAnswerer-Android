@@ -117,10 +117,12 @@ fun ModelSettingsScreen(
     var apiUrl by remember { mutableStateOf(AppConfig.getApiUrl()) }
     var apiKey by remember { mutableStateOf(AppConfig.getApiKey()) }
     var modelName by remember { mutableStateOf(AppConfig.getModelName()) }
+    var thinkingMode by remember { mutableStateOf(AppConfig.getReasoningEffort() != null) }
 
     // Tavily 配置
     var tavilyEnabled by remember { mutableStateOf(AppConfig.getTavilyEnabled()) }
     var tavilyApiKey by remember { mutableStateOf(AppConfig.getTavilyApiKey()) }
+    var regexFilterEnabled by remember { mutableStateOf(AppConfig.isRegexFilterEnabled()) }
 
     // 视觉模型配置
     var visionEnabled by remember { mutableStateOf(AppConfig.isVisionEnabled()) }
@@ -214,6 +216,36 @@ fun ModelSettingsScreen(
                 isPassword = false,
                 modifier = Modifier.fillMaxWidth()
             )
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            // 思考模式开关
+            androidx.compose.foundation.layout.Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = androidx.compose.foundation.layout.Arrangement.SpaceBetween,
+                verticalAlignment = androidx.compose.ui.Alignment.CenterVertically
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = stringResource(R.string.setting_thinking_mode),
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.Medium
+                    )
+                    Text(
+                        text = stringResource(R.string.setting_thinking_mode_desc),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(top = 4.dp)
+                    )
+                }
+                Switch(
+                    checked = thinkingMode,
+                    onCheckedChange = {
+                        thinkingMode = it
+                        AppConfig.saveReasoningEffort(it)
+                    }
+                )
+            }
 
             Spacer(modifier = Modifier.height(32.dp))
 
@@ -375,6 +407,36 @@ fun ModelSettingsScreen(
 
                     // API Key 输入（启用时显示）
                     if (tavilyEnabled) {
+                        Spacer(modifier = Modifier.height(12.dp))
+
+                        // 多题正则过滤开关
+                        androidx.compose.foundation.layout.Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = androidx.compose.foundation.layout.Arrangement.SpaceBetween,
+                            verticalAlignment = androidx.compose.ui.Alignment.CenterVertically
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = stringResource(R.string.setting_regex_filter),
+                                    style = MaterialTheme.typography.titleSmall,
+                                    fontWeight = FontWeight.Medium
+                                )
+                                Text(
+                                    text = stringResource(R.string.setting_regex_filter_desc),
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.padding(top = 4.dp)
+                                )
+                            }
+                            Switch(
+                                checked = regexFilterEnabled,
+                                onCheckedChange = {
+                                    regexFilterEnabled = it
+                                    AppConfig.saveRegexFilterEnabled(it)
+                                }
+                            )
+                        }
+
                         Spacer(modifier = Modifier.height(12.dp))
 
                         PasswordTextField(

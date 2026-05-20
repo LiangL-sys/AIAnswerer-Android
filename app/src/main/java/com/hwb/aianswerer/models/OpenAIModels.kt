@@ -21,7 +21,10 @@ data class ChatRequest(
     val maxTokens: Int? = null,
 
     @SerializedName("response_format")
-    val responseFormat: ResponseFormat? = null
+    val responseFormat: ResponseFormat? = null,
+
+    @SerializedName("reasoning_effort")
+    val reasoningEffort: String? = null
 )
 
 /**

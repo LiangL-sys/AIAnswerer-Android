@@ -305,6 +305,14 @@
     <string name="status_vision_no_question">⚠️ No questions detected</string>
     <string name="status_vision_fallback">⚠️ Vision failed, please retry</string>
 
+    <!-- Thinking Mode -->
+    <string name="setting_thinking_mode">Enable Thinking Mode</string>
+    <string name="setting_thinking_mode_desc">Send reasoning_effort parameter to API, for reasoning models (e.g. o1, DeepSeek-R1)</string>
+
+    <!-- Regex Filter -->
+    <string name="setting_regex_filter">Multi-question Regex Filter</string>
+    <string name="setting_regex_filter_desc">Skip web search when multi-question pattern detected (always search when off)</string>
+
     <!-- Parallel Settings -->
     <string name="setting_parallel_title">Parallel Answer Settings</string>
     <string name="setting_parallel_desc">Parallel processing configuration for multi-question mode</string>
