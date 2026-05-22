@@ -5,31 +5,21 @@ import android.os.Bundle
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
-import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarDuration
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
-import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -46,10 +36,15 @@ import com.hwb.aianswerer.api.TavilyClient
 import com.hwb.aianswerer.api.vision.OpenAIVisionConfig
 import com.hwb.aianswerer.api.vision.OpenAIVisionProvider
 import com.hwb.aianswerer.config.AppConfig
+import com.hwb.aianswerer.ui.components.AnimatedButton
 import com.hwb.aianswerer.ui.components.AppTextField
+import com.hwb.aianswerer.ui.components.ButtonVariant
+import com.hwb.aianswerer.ui.components.InfoCard
 import com.hwb.aianswerer.ui.components.PasswordTextField
+import com.hwb.aianswerer.ui.components.PremiumToggle
+import com.hwb.aianswerer.ui.components.SectionLabel
 import com.hwb.aianswerer.ui.components.TopBarWithBack
-import com.hwb.aianswerer.ui.theme.AIAnswererTheme
+import com.hwb.aianswerer.ui.theme.*
 import com.hwb.aianswerer.utils.LanguageUtil
 import kotlinx.coroutines.launch
 
@@ -89,22 +84,16 @@ class ModelSettingsActivity : BaseActivity() {
 
 /**
  * 测试连接状态
- *
- * 使用密封类清晰表达测试的各种状态
  */
 sealed class TestConnectionState {
-    object Idle : TestConnectionState()      // 初始状态
-    object Testing : TestConnectionState()   // 测试中
-    data class Success(val latencyMs: Long = 0) : TestConnectionState()  // 测试成功，包含延迟时间
-    data class Error(val message: String) : TestConnectionState()  // 测试失败
+    object Idle : TestConnectionState()
+    object Testing : TestConnectionState()
+    data class Success(val latencyMs: Long = 0) : TestConnectionState()
+    data class Error(val message: String) : TestConnectionState()
 }
 
 /**
  * 模型设置界面
- *
- * @param onBackClick 返回按钮点击事件
- * @param onSaveSuccess 保存成功回调
- * @param onSaveError 保存失败回调
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -137,9 +126,9 @@ fun ModelSettingsScreen(
     val snackbarHostState = remember { SnackbarHostState() }
     val coroutineScope = rememberCoroutineScope()
 
-    // 在 Composable 作用域中预取字符串资源，因为协程（Dispatchers.IO）中无法调用 stringResource
     val successMessage = stringResource(R.string.toast_connection_success)
     val failedMessageTemplate = stringResource(R.string.toast_connection_failed)
+    val isDark = LocalIsDarkMode.current
 
     Scaffold(
         topBar = {
@@ -155,556 +144,358 @@ fun ModelSettingsScreen(
         Column(
             modifier = Modifier
                 .fillMaxSize()
+                .background(if (isDark) PremiumBgDark else PremiumBgLight)
                 .padding(paddingValues)
                 .padding(horizontal = 16.dp)
                 .verticalScroll(rememberScrollState())
         ) {
             // 顶部说明
-            Card(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(vertical = 16.dp),
-                shape = RoundedCornerShape(16.dp),
-                colors = CardDefaults.cardColors(
-                    containerColor = MaterialTheme.colorScheme.secondaryContainer
-                ),
-                elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
-            ) {
+            InfoCard(modifier = Modifier.padding(bottom = Spacing.xl)) {
                 Text(
                     text = stringResource(R.string.model_settings_notice),
                     style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSecondaryContainer,
-                    modifier = Modifier.padding(16.dp)
+                    color = if (isDark) TextDarkPrimary else TextDark,
+                    modifier = Modifier.padding(Spacing.lg)
                 )
             }
 
-            Spacer(modifier = Modifier.height(8.dp))
+            // LLM 大模型配置
+            InfoCard(modifier = Modifier.padding(bottom = Spacing.xl)) {
+                SectionLabel("LLM 大模型")
 
-            // API URL输入框（支持多行显示）
-            AppTextField(
-                value = apiUrl,
-                onValueChange = { apiUrl = it },
-                label = stringResource(R.string.label_api_url),
-                placeholder = stringResource(R.string.hint_api_url),
-                isPassword = false,
-                singleLine = false,
-                maxLines = 3,
-                modifier = Modifier.fillMaxWidth()
-            )
+                Spacer(modifier = Modifier.height(Spacing.lg))
 
-            Spacer(modifier = Modifier.height(16.dp))
+                // API URL输入框
+                AppTextField(
+                    value = apiUrl,
+                    onValueChange = { apiUrl = it },
+                    label = stringResource(R.string.label_api_url),
+                    placeholder = stringResource(R.string.hint_api_url),
+                    isPassword = false,
+                    singleLine = false,
+                    maxLines = 3,
+                    modifier = Modifier.fillMaxWidth()
+                )
 
-            // API Key输入框（密码类型，带显示/隐藏切换，支持多行）
-            PasswordTextField(
-                value = apiKey,
-                onValueChange = { apiKey = it },
-                label = stringResource(R.string.label_api_key),
-                placeholder = stringResource(R.string.hint_api_key),
-                singleLine = false,
-                maxLines = 3,
-                modifier = Modifier.fillMaxWidth()
-            )
+                Spacer(modifier = Modifier.height(Spacing.lg))
 
-            Spacer(modifier = Modifier.height(16.dp))
+                // API Key输入框
+                PasswordTextField(
+                    value = apiKey,
+                    onValueChange = { apiKey = it },
+                    label = stringResource(R.string.label_api_key),
+                    placeholder = stringResource(R.string.hint_api_key),
+                    singleLine = false,
+                    maxLines = 3,
+                    modifier = Modifier.fillMaxWidth()
+                )
 
-            // 模型名称输入框
-            AppTextField(
-                value = modelName,
-                onValueChange = { modelName = it },
-                label = stringResource(R.string.label_model_name),
-                placeholder = stringResource(R.string.hint_model_name),
-                isPassword = false,
-                modifier = Modifier.fillMaxWidth()
-            )
+                Spacer(modifier = Modifier.height(Spacing.lg))
 
-            Spacer(modifier = Modifier.height(16.dp))
+                // 模型名称输入框
+                AppTextField(
+                    value = modelName,
+                    onValueChange = { modelName = it },
+                    label = stringResource(R.string.label_model_name),
+                    placeholder = stringResource(R.string.hint_model_name),
+                    isPassword = false,
+                    modifier = Modifier.fillMaxWidth()
+                )
 
-            // 思考模式开关
-            androidx.compose.foundation.layout.Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = androidx.compose.foundation.layout.Arrangement.SpaceBetween,
-                verticalAlignment = androidx.compose.ui.Alignment.CenterVertically
-            ) {
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = stringResource(R.string.setting_thinking_mode),
-                        style = MaterialTheme.typography.titleSmall,
-                        fontWeight = FontWeight.Medium
-                    )
-                    Text(
-                        text = stringResource(R.string.setting_thinking_mode_desc),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.padding(top = 4.dp)
-                    )
-                }
-                Switch(
+                Spacer(modifier = Modifier.height(Spacing.lg))
+
+                // 思考模式开关
+                SettingItemRow(
+                    title = stringResource(R.string.setting_thinking_mode),
+                    description = stringResource(R.string.setting_thinking_mode_desc),
                     checked = thinkingMode,
                     onCheckedChange = {
                         thinkingMode = it
                         AppConfig.saveReasoningEffort(it)
                     }
                 )
-            }
 
-            Spacer(modifier = Modifier.height(32.dp))
+                Spacer(modifier = Modifier.height(Spacing.xl))
 
-            // 测试连接按钮
-            OutlinedButton(
-                onClick = {
-                    // 启动测试流程
-                    coroutineScope.launch {
-                        testState = TestConnectionState.Testing
+                // 测试连接按钮
+                AnimatedButton(
+                    text = if (testState is TestConnectionState.Testing) stringResource(R.string.button_testing) else stringResource(R.string.button_test_connection),
+                    onClick = {
+                        if (testState is TestConnectionState.Testing) return@AnimatedButton
+                        coroutineScope.launch {
+                            testState = TestConnectionState.Testing
 
-                        // 调用API测试方法
-                        val result = OpenAIClient.getInstance().testConnection(
-                            apiUrl,
-                            apiKey,
-                            modelName
-                        )
-
-                        result.onSuccess {
-                            testState = TestConnectionState.Success()
-                            // 显示成功Snackbar
-                            snackbarHostState.showSnackbar(
-                                message = successMessage,
-                                duration = SnackbarDuration.Short
+                            val result = OpenAIClient.getInstance().testConnection(
+                                apiUrl,
+                                apiKey,
+                                modelName
                             )
-                            testState = TestConnectionState.Idle
-                        }.onFailure { error ->
-                            val errorMsg =
-                                error.message ?: MyApplication.getString(R.string.error_unknown)
-                            testState = TestConnectionState.Error(errorMsg)
-                            // 显示失败Snackbar
-                            snackbarHostState.showSnackbar(
-                                message = failedMessageTemplate.format(errorMsg),
-                                duration = SnackbarDuration.Long
-                            )
-                            testState = TestConnectionState.Idle
+
+                            result.onSuccess {
+                                testState = TestConnectionState.Success()
+                                snackbarHostState.showSnackbar(
+                                    message = successMessage,
+                                    duration = SnackbarDuration.Short
+                                )
+                                testState = TestConnectionState.Idle
+                            }.onFailure { error ->
+                                val errorMsg =
+                                    error.message ?: MyApplication.getString(R.string.error_unknown)
+                                testState = TestConnectionState.Error(errorMsg)
+                                snackbarHostState.showSnackbar(
+                                    message = failedMessageTemplate.format(errorMsg),
+                                    duration = SnackbarDuration.Long
+                                )
+                                testState = TestConnectionState.Idle
+                            }
                         }
-                    }
-                },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(56.dp),
-                enabled = testState !is TestConnectionState.Testing,  // 测试中禁用
-                colors = ButtonDefaults.outlinedButtonColors()
-            ) {
-                if (testState is TestConnectionState.Testing) {
-                    // 测试中显示加载指示器
-                    CircularProgressIndicator(
-                        modifier = Modifier.size(20.dp),
-                        strokeWidth = 2.dp
-                    )
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text(
-                        text = stringResource(R.string.button_testing),
-                        style = MaterialTheme.typography.labelLarge
-                    )
-                } else {
-                    Text(
-                        text = stringResource(R.string.button_test_connection),
-                        style = MaterialTheme.typography.labelLarge,
-                        fontWeight = FontWeight.Medium
-                    )
-                }
-            }
-
-            Spacer(modifier = Modifier.height(16.dp))
-
-            // 保存按钮
-            Button(
-                onClick = {
-                    // 验证输入
-                    if (apiUrl.isBlank() || apiKey.isBlank() || modelName.isBlank()) {
-                        onSaveError()
-                        return@Button
-                    }
-
-                    if (!apiUrl.startsWith("http")) {
-                        onSaveError()
-                        return@Button
-                    }
-
-                    // 保存配置
-                    AppConfig.saveApiUrl(apiUrl)
-                    AppConfig.saveApiKey(apiKey)
-                    AppConfig.saveModelName(modelName)
-
-                    onSaveSuccess()
-                },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(56.dp),
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = MaterialTheme.colorScheme.primary
+                    },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(56.dp),
+                    variant = ButtonVariant.Tonal
                 )
-            ) {
-                Text(
+
+                Spacer(modifier = Modifier.height(Spacing.lg))
+
+                // 保存按钮
+                AnimatedButton(
                     text = stringResource(R.string.button_save),
-                    style = MaterialTheme.typography.labelLarge,
-                    fontWeight = FontWeight.Bold
+                    onClick = {
+                        if (apiUrl.isBlank() || apiKey.isBlank() || modelName.isBlank()) {
+                            onSaveError()
+                        } else if (!apiUrl.startsWith("http")) {
+                            onSaveError()
+                        } else {
+                            AppConfig.saveApiUrl(apiUrl)
+                            AppConfig.saveApiKey(apiKey)
+                            AppConfig.saveModelName(modelName)
+                            onSaveSuccess()
+                        }
+                    },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(56.dp),
+                    variant = ButtonVariant.Primary
                 )
             }
-
-            Spacer(modifier = Modifier.height(24.dp))
 
             // ========== Tavily 联网搜索配置 ==========
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(16.dp),
-                colors = CardDefaults.cardColors(
-                    containerColor = MaterialTheme.colorScheme.surface
-                ),
-                elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
-                border = BorderStroke(0.5.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
-            ) {
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(16.dp)
-                ) {
-                    Text(
-                        text = stringResource(R.string.tavily_settings_title),
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold,
-                        modifier = Modifier.padding(bottom = 4.dp)
-                    )
-                    Text(
-                        text = stringResource(R.string.tavily_settings_desc),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.padding(bottom = 12.dp)
+            InfoCard(modifier = Modifier.padding(bottom = Spacing.xl)) {
+                SectionLabel(stringResource(R.string.tavily_settings_title))
+                Text(
+                    text = stringResource(R.string.tavily_settings_desc),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = if (isDark) TextDarkSecondary else TextTertiary,
+                    modifier = Modifier.padding(bottom = Spacing.lg)
+                )
+
+                // 启用开关
+                SettingItemRow(
+                    title = stringResource(R.string.tavily_enable_label),
+                    description = stringResource(R.string.tavily_enable_desc),
+                    checked = tavilyEnabled,
+                    onCheckedChange = {
+                        tavilyEnabled = it
+                        AppConfig.saveTavilyEnabled(it)
+                    }
+                )
+
+                // API Key 输入（启用时显示）
+                if (tavilyEnabled) {
+                    Spacer(modifier = Modifier.height(Spacing.lg))
+
+                    // 多题正则过滤开关
+                    SettingItemRow(
+                        title = stringResource(R.string.setting_regex_filter),
+                        description = stringResource(R.string.setting_regex_filter_desc),
+                        checked = regexFilterEnabled,
+                        onCheckedChange = {
+                            regexFilterEnabled = it
+                            AppConfig.saveRegexFilterEnabled(it)
+                        }
                     )
 
-                    // 启用开关
-                    androidx.compose.foundation.layout.Row(
+                    Spacer(modifier = Modifier.height(Spacing.lg))
+
+                    PasswordTextField(
+                        value = tavilyApiKey,
+                        onValueChange = { tavilyApiKey = it },
+                        label = stringResource(R.string.label_tavily_api_key),
+                        placeholder = stringResource(R.string.hint_tavily_api_key),
+                        modifier = Modifier.fillMaxWidth()
+                    )
+
+                    Spacer(modifier = Modifier.height(Spacing.lg))
+
+                    // 测试连接按钮
+                    AnimatedButton(
+                        text = if (tavilyTestState is TestConnectionState.Testing) stringResource(R.string.button_testing) else stringResource(R.string.button_test_connection),
+                        onClick = {
+                            if (tavilyTestState is TestConnectionState.Testing) return@AnimatedButton
+                            coroutineScope.launch {
+                                tavilyTestState = TestConnectionState.Testing
+                                val result = TavilyClient.getInstance().testConnection(tavilyApiKey)
+                                result.onSuccess {
+                                    tavilyTestState = TestConnectionState.Success()
+                                    snackbarHostState.showSnackbar(
+                                        message = successMessage,
+                                        duration = SnackbarDuration.Short
+                                    )
+                                    tavilyTestState = TestConnectionState.Idle
+                                }.onFailure { error ->
+                                    val errorMsg = error.message ?: MyApplication.getString(R.string.error_unknown)
+                                    tavilyTestState = TestConnectionState.Error(errorMsg)
+                                    snackbarHostState.showSnackbar(
+                                        message = failedMessageTemplate.format(errorMsg),
+                                        duration = SnackbarDuration.Long
+                                    )
+                                    tavilyTestState = TestConnectionState.Idle
+                                }
+                            }
+                        },
                         modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = androidx.compose.foundation.layout.Arrangement.SpaceBetween,
-                        verticalAlignment = androidx.compose.ui.Alignment.CenterVertically
-                    ) {
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(
-                                text = stringResource(R.string.tavily_enable_label),
-                                style = MaterialTheme.typography.titleSmall,
-                                fontWeight = FontWeight.Medium
-                            )
-                            Text(
-                                text = stringResource(R.string.tavily_enable_desc),
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier.padding(top = 4.dp)
-                            )
-                        }
-                        Switch(
-                            checked = tavilyEnabled,
-                            onCheckedChange = {
-                                tavilyEnabled = it
-                                AppConfig.saveTavilyEnabled(it)
-                            }
-                        )
-                    }
+                        variant = ButtonVariant.Tonal
+                    )
 
-                    // API Key 输入（启用时显示）
-                    if (tavilyEnabled) {
-                        Spacer(modifier = Modifier.height(12.dp))
+                    Spacer(modifier = Modifier.height(Spacing.lg))
 
-                        // 多题正则过滤开关
-                        androidx.compose.foundation.layout.Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = androidx.compose.foundation.layout.Arrangement.SpaceBetween,
-                            verticalAlignment = androidx.compose.ui.Alignment.CenterVertically
-                        ) {
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text(
-                                    text = stringResource(R.string.setting_regex_filter),
-                                    style = MaterialTheme.typography.titleSmall,
-                                    fontWeight = FontWeight.Medium
-                                )
-                                Text(
-                                    text = stringResource(R.string.setting_regex_filter_desc),
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    modifier = Modifier.padding(top = 4.dp)
-                                )
-                            }
-                            Switch(
-                                checked = regexFilterEnabled,
-                                onCheckedChange = {
-                                    regexFilterEnabled = it
-                                    AppConfig.saveRegexFilterEnabled(it)
-                                }
-                            )
-                        }
-
-                        Spacer(modifier = Modifier.height(12.dp))
-
-                        PasswordTextField(
-                            value = tavilyApiKey,
-                            onValueChange = { tavilyApiKey = it },
-                            label = stringResource(R.string.label_tavily_api_key),
-                            placeholder = stringResource(R.string.hint_tavily_api_key),
-                            modifier = Modifier.fillMaxWidth()
-                        )
-
-                        Spacer(modifier = Modifier.height(12.dp))
-
-                        // 测试连接按钮
-                        OutlinedButton(
-                            onClick = {
-                                coroutineScope.launch {
-                                    tavilyTestState = TestConnectionState.Testing
-                                    val result = TavilyClient.getInstance().testConnection(tavilyApiKey)
-                                    result.onSuccess {
-                                        tavilyTestState = TestConnectionState.Success()
-                                        snackbarHostState.showSnackbar(
-                                            message = successMessage,
-                                            duration = SnackbarDuration.Short
-                                        )
-                                        tavilyTestState = TestConnectionState.Idle
-                                    }.onFailure { error ->
-                                        val errorMsg = error.message ?: MyApplication.getString(R.string.error_unknown)
-                                        tavilyTestState = TestConnectionState.Error(errorMsg)
-                                        snackbarHostState.showSnackbar(
-                                            message = failedMessageTemplate.format(errorMsg),
-                                            duration = SnackbarDuration.Long
-                                        )
-                                        tavilyTestState = TestConnectionState.Idle
-                                    }
-                                }
-                            },
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(48.dp),
-                            enabled = tavilyTestState !is TestConnectionState.Testing && tavilyApiKey.isNotBlank(),
-                            colors = ButtonDefaults.outlinedButtonColors()
-                        ) {
-                            if (tavilyTestState is TestConnectionState.Testing) {
-                                CircularProgressIndicator(
-                                    modifier = Modifier.size(18.dp),
-                                    strokeWidth = 2.dp
-                                )
-                                Spacer(modifier = Modifier.width(8.dp))
-                                Text(
-                                    text = stringResource(R.string.button_testing),
-                                    style = MaterialTheme.typography.labelLarge
-                                )
-                            } else {
-                                Text(
-                                    text = stringResource(R.string.button_test_connection),
-                                    style = MaterialTheme.typography.labelLarge,
-                                    fontWeight = FontWeight.Medium
-                                )
-                            }
-                        }
-
-                        Spacer(modifier = Modifier.height(12.dp))
-
-                        Button(
-                            onClick = {
-                                AppConfig.saveTavilyApiKey(tavilyApiKey)
-                                Toast.makeText(
-                                    MyApplication.getAppContext(),
-                                    MyApplication.getString(R.string.toast_settings_saved),
-                                    Toast.LENGTH_SHORT
-                                ).show()
-                            },
-                            modifier = Modifier.fillMaxWidth(),
-                            colors = ButtonDefaults.buttonColors(
-                                containerColor = MaterialTheme.colorScheme.secondary
-                            )
-                        ) {
-                            Text(
-                                text = stringResource(R.string.button_save),
-                                style = MaterialTheme.typography.labelLarge,
-                                fontWeight = FontWeight.Bold
-                            )
-                        }
-                    }
+                    // 保存按钮
+                    AnimatedButton(
+                        text = stringResource(R.string.button_save),
+                        onClick = {
+                            AppConfig.saveTavilyApiKey(tavilyApiKey)
+                            Toast.makeText(
+                                MyApplication.getAppContext(),
+                                MyApplication.getString(R.string.toast_settings_saved),
+                                Toast.LENGTH_SHORT
+                            ).show()
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        variant = ButtonVariant.Primary
+                    )
                 }
             }
 
-            Spacer(modifier = Modifier.height(16.dp))
-
             // ========== 视觉模型配置 ==========
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(16.dp),
-                colors = CardDefaults.cardColors(
-                    containerColor = MaterialTheme.colorScheme.surface
-                ),
-                elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
-                border = BorderStroke(0.5.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
-            ) {
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(16.dp)
-                ) {
-                    Text(
-                        text = stringResource(R.string.vision_settings_title),
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold,
-                        modifier = Modifier.padding(bottom = 4.dp)
-                    )
-                    Text(
-                        text = stringResource(R.string.vision_settings_desc),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.padding(bottom = 12.dp)
-                    )
+            InfoCard(modifier = Modifier.padding(bottom = Spacing.xl)) {
+                SectionLabel(stringResource(R.string.vision_settings_title))
+                Text(
+                    text = stringResource(R.string.vision_settings_desc),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = if (isDark) TextDarkSecondary else TextTertiary,
+                    modifier = Modifier.padding(bottom = Spacing.lg)
+                )
 
-                    // 启用开关
-                    androidx.compose.foundation.layout.Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = androidx.compose.foundation.layout.Arrangement.SpaceBetween,
-                        verticalAlignment = androidx.compose.ui.Alignment.CenterVertically
-                    ) {
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(
-                                text = stringResource(R.string.vision_enable_label),
-                                style = MaterialTheme.typography.titleSmall,
-                                fontWeight = FontWeight.Medium
-                            )
-                            Text(
-                                text = stringResource(R.string.vision_enable_desc),
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier.padding(top = 4.dp)
-                            )
-                        }
-                        Switch(
-                            checked = visionEnabled,
-                            onCheckedChange = {
-                                visionEnabled = it
-                                AppConfig.saveVisionEnabled(it)
-                            }
-                        )
+                // 启用开关
+                SettingItemRow(
+                    title = stringResource(R.string.vision_enable_label),
+                    description = stringResource(R.string.vision_enable_desc),
+                    checked = visionEnabled,
+                    onCheckedChange = {
+                        visionEnabled = it
+                        AppConfig.saveVisionEnabled(it)
                     }
+                )
 
-                    // 模型名称输入（启用时显示）
-                    if (visionEnabled) {
-                        Spacer(modifier = Modifier.height(12.dp))
+                // 模型名称输入（启用时显示）
+                if (visionEnabled) {
+                    Spacer(modifier = Modifier.height(Spacing.lg))
 
-                        // API地址输入
-                        AppTextField(
-                            value = visionApiUrl,
-                            onValueChange = { visionApiUrl = it },
-                            label = stringResource(R.string.label_vision_api_url),
-                            placeholder = stringResource(R.string.hint_vision_api_url),
-                            isPassword = false,
-                            singleLine = false,
-                            maxLines = 3,
-                            modifier = Modifier.fillMaxWidth()
-                        )
+                    // API地址输入
+                    AppTextField(
+                        value = visionApiUrl,
+                        onValueChange = { visionApiUrl = it },
+                        label = stringResource(R.string.label_vision_api_url),
+                        placeholder = stringResource(R.string.hint_vision_api_url),
+                        isPassword = false,
+                        singleLine = false,
+                        maxLines = 3,
+                        modifier = Modifier.fillMaxWidth()
+                    )
 
-                        Spacer(modifier = Modifier.height(12.dp))
+                    Spacer(modifier = Modifier.height(Spacing.lg))
 
-                        // API Key输入
-                        PasswordTextField(
-                            value = visionApiKey,
-                            onValueChange = { visionApiKey = it },
-                            label = stringResource(R.string.label_vision_api_key),
-                            placeholder = stringResource(R.string.hint_vision_api_key),
-                            modifier = Modifier.fillMaxWidth()
-                        )
+                    // API Key输入
+                    PasswordTextField(
+                        value = visionApiKey,
+                        onValueChange = { visionApiKey = it },
+                        label = stringResource(R.string.label_vision_api_key),
+                        placeholder = stringResource(R.string.hint_vision_api_key),
+                        modifier = Modifier.fillMaxWidth()
+                    )
 
-                        Spacer(modifier = Modifier.height(12.dp))
+                    Spacer(modifier = Modifier.height(Spacing.lg))
 
-                        // 模型名称输入
-                        AppTextField(
-                            value = visionModelName,
-                            onValueChange = { visionModelName = it },
-                            label = stringResource(R.string.label_vision_model),
-                            placeholder = stringResource(R.string.hint_vision_model),
-                            isPassword = false,
-                            modifier = Modifier.fillMaxWidth()
-                        )
+                    // 模型名称输入
+                    AppTextField(
+                        value = visionModelName,
+                        onValueChange = { visionModelName = it },
+                        label = stringResource(R.string.label_vision_model),
+                        placeholder = stringResource(R.string.hint_vision_model),
+                        isPassword = false,
+                        modifier = Modifier.fillMaxWidth()
+                    )
 
-                        Spacer(modifier = Modifier.height(12.dp))
+                    Spacer(modifier = Modifier.height(Spacing.lg))
 
-                        // 测试连接按钮
-                        OutlinedButton(
-                            onClick = {
-                                coroutineScope.launch {
-                                    visionTestState = TestConnectionState.Testing
+                    // 测试连接按钮
+                    AnimatedButton(
+                        text = if (visionTestState is TestConnectionState.Testing) stringResource(R.string.button_testing) else stringResource(R.string.button_test_connection),
+                        onClick = {
+                            if (visionTestState is TestConnectionState.Testing) return@AnimatedButton
+                            coroutineScope.launch {
+                                visionTestState = TestConnectionState.Testing
 
-                                    val config = OpenAIVisionConfig(
-                                        baseUrl = visionApiUrl,
-                                        apiKey = visionApiKey,
-                                        modelName = visionModelName
+                                val config = OpenAIVisionConfig(
+                                    baseUrl = visionApiUrl,
+                                    apiKey = visionApiKey,
+                                    modelName = visionModelName
+                                )
+                                val provider = OpenAIVisionProvider(config)
+                                val result = provider.testConnection()
+
+                                result.onSuccess {
+                                    visionTestState = TestConnectionState.Success()
+                                    snackbarHostState.showSnackbar(
+                                        message = successMessage,
+                                        duration = SnackbarDuration.Short
                                     )
-                                    val provider = OpenAIVisionProvider(config)
-                                    val result = provider.testConnection()
-
-                                    result.onSuccess {
-                                        visionTestState = TestConnectionState.Success()
-                                        snackbarHostState.showSnackbar(
-                                            message = successMessage,
-                                            duration = SnackbarDuration.Short
-                                        )
-                                        visionTestState = TestConnectionState.Idle
-                                    }.onFailure { error ->
-                                        val errorMsg = error.message ?: MyApplication.getString(R.string.error_unknown)
-                                        visionTestState = TestConnectionState.Error(errorMsg)
-                                        snackbarHostState.showSnackbar(
-                                            message = failedMessageTemplate.format(errorMsg),
-                                            duration = SnackbarDuration.Long
-                                        )
-                                        visionTestState = TestConnectionState.Idle
-                                    }
+                                    visionTestState = TestConnectionState.Idle
+                                }.onFailure { error ->
+                                    val errorMsg = error.message ?: MyApplication.getString(R.string.error_unknown)
+                                    visionTestState = TestConnectionState.Error(errorMsg)
+                                    snackbarHostState.showSnackbar(
+                                        message = failedMessageTemplate.format(errorMsg),
+                                        duration = SnackbarDuration.Long
+                                    )
+                                    visionTestState = TestConnectionState.Idle
                                 }
-                            },
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(48.dp),
-                            enabled = visionTestState !is TestConnectionState.Testing && visionApiUrl.isNotBlank() && visionApiKey.isNotBlank() && visionModelName.isNotBlank(),
-                            colors = ButtonDefaults.outlinedButtonColors()
-                        ) {
-                            if (visionTestState is TestConnectionState.Testing) {
-                                CircularProgressIndicator(
-                                    modifier = Modifier.size(18.dp),
-                                    strokeWidth = 2.dp
-                                )
-                                Spacer(modifier = Modifier.width(8.dp))
-                                Text(
-                                    text = stringResource(R.string.button_testing),
-                                    style = MaterialTheme.typography.labelLarge
-                                )
-                            } else {
-                                Text(
-                                    text = stringResource(R.string.button_test_connection),
-                                    style = MaterialTheme.typography.labelLarge,
-                                    fontWeight = FontWeight.Medium
-                                )
                             }
-                        }
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        variant = ButtonVariant.Tonal
+                    )
 
-                        Spacer(modifier = Modifier.height(12.dp))
+                    Spacer(modifier = Modifier.height(Spacing.lg))
 
-                        // 保存按钮
-                        Button(
-                            onClick = {
-                                // 验证输入
-                                if (visionApiUrl.isBlank() || visionApiKey.isBlank() || visionModelName.isBlank()) {
-                                    Toast.makeText(
-                                        MyApplication.getAppContext(),
-                                        MyApplication.getString(R.string.toast_settings_error),
-                                        Toast.LENGTH_SHORT
-                                    ).show()
-                                    return@Button
-                                }
-
-                                if (!visionApiUrl.startsWith("http")) {
-                                    Toast.makeText(
-                                        MyApplication.getAppContext(),
-                                        MyApplication.getString(R.string.toast_settings_error),
-                                        Toast.LENGTH_SHORT
-                                    ).show()
-                                    return@Button
-                                }
-
-                                // 保存配置
+                    // 保存按钮
+                    AnimatedButton(
+                        text = stringResource(R.string.button_save),
+                        onClick = {
+                            if (visionApiUrl.isBlank() || visionApiKey.isBlank() || visionModelName.isBlank()) {
+                                Toast.makeText(
+                                    MyApplication.getAppContext(),
+                                    MyApplication.getString(R.string.toast_settings_error),
+                                    Toast.LENGTH_SHORT
+                                ).show()
+                            } else if (!visionApiUrl.startsWith("http")) {
+                                Toast.makeText(
+                                    MyApplication.getAppContext(),
+                                    MyApplication.getString(R.string.toast_settings_error),
+                                    Toast.LENGTH_SHORT
+                                ).show()
+                            } else {
                                 AppConfig.saveVisionBaseUrl(visionApiUrl)
                                 AppConfig.saveVisionApiKey(visionApiKey)
                                 AppConfig.saveVisionModelName(visionModelName)
@@ -714,24 +505,51 @@ fun ModelSettingsScreen(
                                     MyApplication.getString(R.string.toast_settings_saved),
                                     Toast.LENGTH_SHORT
                                 ).show()
-                            },
-                            modifier = Modifier.fillMaxWidth(),
-                            colors = ButtonDefaults.buttonColors(
-                                containerColor = MaterialTheme.colorScheme.secondary
-                            )
-                        ) {
-                            Text(
-                                text = stringResource(R.string.button_save),
-                                style = MaterialTheme.typography.labelLarge,
-                                fontWeight = FontWeight.Bold
-                            )
-                        }
-                    }
+                            }
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        variant = ButtonVariant.Primary
+                    )
                 }
             }
-
-            Spacer(modifier = Modifier.height(16.dp))
         }
     }
 }
 
+/**
+ * Helper composable for setting items in model settings.
+ * Uses PremiumToggle with proper dark mode support.
+ */
+@Composable
+private fun SettingItemRow(
+    title: String,
+    description: String,
+    checked: Boolean,
+    onCheckedChange: (Boolean) -> Unit
+) {
+    val isDark = LocalIsDarkMode.current
+    androidx.compose.foundation.layout.Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = androidx.compose.foundation.layout.Arrangement.SpaceBetween,
+        verticalAlignment = androidx.compose.ui.Alignment.CenterVertically
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = title,
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.Medium,
+                color = if (isDark) TextDarkPrimary else TextDark
+            )
+            Text(
+                text = description,
+                style = MaterialTheme.typography.bodySmall,
+                color = if (isDark) TextDarkSecondary else TextTertiary,
+                modifier = Modifier.padding(top = 4.dp)
+            )
+        }
+        PremiumToggle(
+            checked = checked,
+            onCheckedChange = onCheckedChange
+        )
+    }
+}

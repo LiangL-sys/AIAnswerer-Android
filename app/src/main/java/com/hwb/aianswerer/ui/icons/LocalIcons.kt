@@ -203,6 +203,79 @@ object LocalIcons {
     }
 
     /**
+     * 对勾圆形图标
+     * 用于: 复制成功反馈
+     */
+    val CheckCircle: ImageVector by lazy {
+        ImageVector.Builder(
+            name = "CheckCircle",
+            defaultWidth = 24.dp,
+            defaultHeight = 24.dp,
+            viewportWidth = 24f,
+            viewportHeight = 24f
+        ).apply {
+            path(fill = SolidColor(Color.Black)) {
+                moveTo(12f, 2f)
+                curveTo(6.48f, 2f, 2f, 6.48f, 2f, 12f)
+                reflectiveCurveToRelative(4.48f, 10f, 10f, 10f)
+                reflectiveCurveToRelative(10f, -4.48f, 10f, -10f)
+                reflectiveCurveTo(17.52f, 2f, 12f, 2f)
+                close()
+                moveTo(10f, 17f)
+                lineToRelative(-5f, -5f)
+                lineToRelative(1.41f, -1.41f)
+                lineTo(10f, 14.17f)
+                lineToRelative(7.59f, -7.59f)
+                lineTo(19f, 8f)
+                lineToRelative(-9f, 9f)
+                close()
+            }
+        }.build()
+    }
+
+    /**
+     * 复制图标
+     * 用于: 悬浮窗答案卡片的复制按钮
+     */
+    val ContentCopy: ImageVector by lazy {
+        ImageVector.Builder(
+            name = "ContentCopy",
+            defaultWidth = 24.dp,
+            defaultHeight = 24.dp,
+            viewportWidth = 24f,
+            viewportHeight = 24f
+        ).apply {
+            path(fill = SolidColor(Color.Black)) {
+                moveTo(16f, 1f)
+                horizontalLineTo(4f)
+                curveToRelative(-1.1f, 0f, -2f, 0.9f, -2f, 2f)
+                verticalLineToRelative(14f)
+                horizontalLineToRelative(2f)
+                verticalLineTo(3f)
+                horizontalLineToRelative(12f)
+                verticalLineTo(1f)
+                close()
+                moveTo(19f, 5f)
+                horizontalLineTo(8f)
+                curveToRelative(-1.1f, 0f, -2f, 0.9f, -2f, 2f)
+                verticalLineToRelative(14f)
+                curveToRelative(0f, 1.1f, 0.9f, 2f, 2f, 2f)
+                horizontalLineToRelative(11f)
+                curveToRelative(1.1f, 0f, 2f, -0.9f, 2f, -2f)
+                verticalLineTo(7f)
+                curveToRelative(0f, -1.1f, -0.9f, -2f, -2f, -2f)
+                close()
+                moveTo(19f, 21f)
+                horizontalLineTo(8f)
+                verticalLineTo(7f)
+                horizontalLineToRelative(11f)
+                verticalLineToRelative(14f)
+                close()
+            }
+        }.build()
+    }
+
+    /**
      * 关闭图标（X）
      * 用于: 悬浮窗和对话框的关闭按钮
      */

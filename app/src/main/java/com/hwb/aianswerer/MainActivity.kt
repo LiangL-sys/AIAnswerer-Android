@@ -12,50 +12,45 @@ import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
 import androidx.compose.animation.shrinkVertically
+import androidx.compose.animation.slideInVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.ui.draw.clip
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
-import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.ClickableText
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.CheckCircle
-import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.KeyboardArrowDown
-import androidx.compose.material.icons.filled.PlayArrow
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FilterChip
-import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.RadioButton
-import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -65,10 +60,9 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.unit.dp
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.SpanStyle
@@ -77,13 +71,18 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.tooling.preview.Preview
-import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.hwb.aianswerer.config.AppConfig
-import com.hwb.aianswerer.ui.components.TopBarWithMenu
+import com.hwb.aianswerer.ui.components.AnimatedButton
+import com.hwb.aianswerer.ui.components.ButtonVariant
+import com.hwb.aianswerer.ui.icons.LocalIcons
+import com.hwb.aianswerer.ui.components.GlassInfoCard
+import com.hwb.aianswerer.ui.components.InfoCard
+import com.hwb.aianswerer.ui.components.PremiumChip
+import com.hwb.aianswerer.ui.components.SectionLabel
 import com.hwb.aianswerer.ui.dialogs.LanguageSelectionDialog
 import com.hwb.aianswerer.ui.dialogs.ModelSetupReminderDialog
-import com.hwb.aianswerer.ui.theme.AIAnswererTheme
+import com.hwb.aianswerer.ui.theme.*
 import com.hwb.aianswerer.utils.LanguageUtil
 
 /**
@@ -420,137 +419,183 @@ fun MainScreen(
     onGoToSettings: () -> Unit = {},
     onMenuItemClick: (MenuItem) -> Unit = {}
 ) {
-    Scaffold(
-        topBar = {
-            TopBarWithMenu(
-                title = stringResource(R.string.main_title),
-                menuContent = {
-                    DropdownMenuItem(
-                        text = { Text(stringResource(R.string.menu_settings)) },
-                        onClick = {
-                            onMenuItemClick(MenuItem.SETTINGS)
-                        }
-                    )
-                    DropdownMenuItem(
-                        text = { Text(stringResource(R.string.menu_about)) },
-                        onClick = {
-                            onMenuItemClick(MenuItem.ABOUT)
-                        }
-                    )
-                }
-            )
-        }
-    ) { paddingValues ->
-        val isDark = isSystemInDarkTheme()
+    val context = LocalContext.current
+    val isDark = LocalIsDarkMode.current
 
+    // Q-bouncy spring: elastic overshoot, snappy settle
+    val bouncySpring = spring<Float>(dampingRatio = 0.35f, stiffness = 450f)
+
+    // Menu state — hoisted to top level so Popup isn't clipped
+    var menuExpanded by remember { mutableStateOf(false) }
+
+    // Page-level fade-in with Q-bounce
+    var pageAlpha by remember { mutableStateOf(0f) }
+    LaunchedEffect(Unit) { pageAlpha = 1f }
+    val pageFade by animateFloatAsState(
+        targetValue = pageAlpha,
+        animationSpec = bouncySpring,
+        label = "page_fade"
+    )
+
+    Box(modifier = Modifier.fillMaxSize().graphicsLayer { alpha = pageFade }) {
+        // ── Apple-style Background ──
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(paddingValues)
                 .background(
-                    brush = Brush.verticalGradient(
-                        colors = listOf(
-                            MaterialTheme.colorScheme.primaryContainer.copy(alpha = if (isDark) 0.1f else 0.15f),
-                            MaterialTheme.colorScheme.background,
-                            MaterialTheme.colorScheme.background
-                        ),
-                        startY = 0f,
-                        endY = 600f
+                    Brush.verticalGradient(
+                        colors = if (isDark) listOf(PremiumBgDark, PremiumBgDark) else listOf(PremiumBgLight, PremiumBgLightEnd)
                     )
                 )
         ) {
-            val context = LocalContext.current
-
+            // Ambient glow orbs — very subtle warmth
             Box(
-                modifier = Modifier.fillMaxSize()
-            ) {
-                Column(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .verticalScroll(rememberScrollState())
-                        .padding(horizontal = 24.dp)
-                        .padding(bottom = 96.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.Top
-                ) {
-                    Spacer(modifier = Modifier.height(16.dp))
+                modifier = Modifier
+                    .size(200.dp)
+                    .align(Alignment.TopEnd)
+                    .offset(x = (-30).dp, y = 80.dp)
+                    .background(
+                        Brush.radialGradient(
+                            colors = listOf(WarmGlow.copy(alpha = if (isDark) 0.08f else 0.05f), Color.Transparent)
+                        )
+                    )
+            )
+            Box(
+                modifier = Modifier
+                    .size(160.dp)
+                    .align(Alignment.CenterStart)
+                    .offset(x = (-10).dp, y = (-40).dp)
+                    .background(
+                        Brush.radialGradient(
+                            colors = listOf(IndigoGlow.copy(alpha = if (isDark) 0.10f else 0.05f), Color.Transparent)
+                        )
+                    )
+            )
+        }
 
-                    // 状态提示 - 图标化卡片
-                    Card(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(vertical = 16.dp),
-                        shape = RoundedCornerShape(24.dp),
-                        colors = CardDefaults.cardColors(containerColor = Color.Transparent),
-                        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
-                    ) {
+        Column(modifier = Modifier.fillMaxSize()) {
+            // ── Header: Apple-style generous spacing ──
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(start = Spacing.xxl, end = Spacing.xxl, top = 56.dp, bottom = Spacing.xxl),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.Top
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = stringResource(R.string.main_title),
+                        style = MaterialTheme.typography.displayMedium,
+                        color = if (isDark) TextDarkPrimary else TextDark
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    Text(
+                        text = stringResource(R.string.main_subtitle),
+                        style = MaterialTheme.typography.bodyLarge,
+                        color = if (isDark) TextDarkSecondary else TextSecondary
+                    )
+                }
+                Spacer(Modifier.width(Spacing.md))
+                Box(
+                    modifier = Modifier
+                        .size(44.dp)
+                        .clip(RoundedCornerShape(14.dp))
+                        .background(if (isDark) GlassDark else Color.Black.copy(alpha = 0.04f))
+                        .clickable { menuExpanded = !menuExpanded },
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = LocalIcons.MoreVert,
+                        contentDescription = stringResource(R.string.cd_menu_button),
+                        tint = if (isDark) TextDarkSecondary else TextSecondary,
+                        modifier = Modifier.size(20.dp)
+                    )
+                }
+            }
+
+            Column(
+                modifier = Modifier
+                    .weight(1f)
+                    .verticalScroll(rememberScrollState())
+                    .padding(horizontal = Spacing.xxl)
+            ) {
+                Spacer(Modifier.height(Spacing.sm))
+
+                // ── Glass Status Card — Apple-style smooth entrance ──
+                AnimatedVisibility(
+                    visible = true,
+                    enter = slideInVertically(
+                        initialOffsetY = { it / 6 },
+                        animationSpec = spring(dampingRatio = 0.35f, stiffness = 450f)
+                    ) + fadeIn(animationSpec = spring(dampingRatio = 0.40f, stiffness = 400f)),
+                    modifier = Modifier.padding(bottom = Spacing.xl)
+                ) {
+                    GlassInfoCard {
                         Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .background(
-                                    brush = Brush.horizontalGradient(
-                                        colors = if (isAnswerModeActive)
-                                            listOf(
-                                                MaterialTheme.colorScheme.primaryContainer,
-                                                MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.4f)
-                                            )
-                                        else
-                                            listOf(
-                                                MaterialTheme.colorScheme.surfaceVariant,
-                                                MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)
-                                            )
-                                    ),
-                                    shape = RoundedCornerShape(24.dp)
-                                )
-                                .padding(24.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(16.dp)
+                            verticalAlignment = Alignment.CenterVertically
                         ) {
                             Box(
                                 modifier = Modifier
-                                    .size(56.dp)
-                                    .background(
-                                        color = if (isAnswerModeActive)
-                                            MaterialTheme.colorScheme.primary.copy(alpha = 0.15f)
-                                        else
-                                            MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f),
-                                        shape = CircleShape
-                                    ),
+                                    .size(48.dp)
+                                    .clip(RoundedCornerShape(14.dp))
+                                    .then(
+                                        if (isAnswerModeActive)
+                                            Modifier.primaryGradient(RoundedCornerShape(14.dp))
+                                        else Modifier.background(AccentGold.copy(alpha = 0.15f), RoundedCornerShape(14.dp))
+                                    )
+                                    .shadowButton(14.dp),
                                 contentAlignment = Alignment.Center
                             ) {
                                 Icon(
-                                    imageVector = if (isAnswerModeActive) Icons.Default.CheckCircle else Icons.Default.Info,
+                                    imageVector = if (isAnswerModeActive) LocalIcons.Search else LocalIcons.Search,
                                     contentDescription = null,
-                                    modifier = Modifier.size(28.dp),
-                                    tint = if (isAnswerModeActive)
-                                        MaterialTheme.colorScheme.primary
-                                    else
-                                        MaterialTheme.colorScheme.onSurfaceVariant
+                                    tint = if (isAnswerModeActive) Color.White else AccentGold,
+                                    modifier = Modifier.size(22.dp)
                                 )
                             }
-                            Column(modifier = Modifier.weight(1f)) {
+                            Spacer(Modifier.width(Spacing.lg))
+                            Column {
                                 Text(
                                     text = if (isAnswerModeActive)
                                         stringResource(R.string.status_running)
                                     else stringResource(R.string.status_stopped),
                                     style = MaterialTheme.typography.titleMedium,
-                                    fontWeight = FontWeight.SemiBold
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = if (isDark) TextDarkPrimary else TextDark
                                 )
+                                Spacer(Modifier.height(2.dp))
                                 Text(
                                     text = if (isAnswerModeActive)
                                         stringResource(R.string.status_running_desc)
                                     else stringResource(R.string.status_stopped_desc),
                                     style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    color = if (isDark) TextDarkSecondary else TextTertiary
                                 )
                             }
                         }
                     }
+                }
 
+                // ── Usage Guide — staggered 60ms ──
+                AnimatedVisibility(
+                    visible = true,
+                    enter = slideInVertically(
+                        initialOffsetY = { it / 6 },
+                        animationSpec = spring(dampingRatio = 0.35f, stiffness = 450f)
+                    ) + fadeIn(animationSpec = spring(dampingRatio = 0.40f, stiffness = 400f)),
+                    modifier = Modifier.padding(bottom = Spacing.xl)
+                ) {
                     UsageGuideCard(context = context)
+                }
 
-                    Spacer(modifier = Modifier.height(8.dp))
-
+                // ── Session Settings — staggered 120ms ──
+                AnimatedVisibility(
+                    visible = true,
+                    enter = slideInVertically(
+                        initialOffsetY = { it / 6 },
+                        animationSpec = spring(dampingRatio = 0.72f, stiffness = 280f)
+                    ) + fadeIn(animationSpec = spring(dampingRatio = 0.75f, stiffness = 350f))
+                ) {
                     SessionSettingsCard(
                         selectedQuestionTypes = selectedQuestionTypes,
                         cropMode = cropMode,
@@ -560,61 +605,105 @@ fun MainScreen(
                     )
                 }
 
-                // 渐变发光按钮
-                Button(
+                Spacer(Modifier.height(32.dp))
+            }
+
+            // ── CTA Button — Apple-style scale in ──
+            AnimatedVisibility(
+                visible = true,
+                enter = scaleIn(
+                    initialScale = 0.90f,
+                    animationSpec = spring(dampingRatio = 0.35f, stiffness = 450f)
+                ) + fadeIn(animationSpec = bouncySpring),
+                modifier = Modifier.fillMaxWidth().padding(horizontal = Spacing.xxl, vertical = Spacing.lg)
+            ) {
+                AnimatedButton(
+                    text = if (isAnswerModeActive)
+                        stringResource(R.string.button_stop_mode)
+                    else "✦  " + stringResource(R.string.button_start_mode),
                     onClick = onToggleAnswerMode,
+                    variant = if (isAnswerModeActive) ButtonVariant.Tonal else ButtonVariant.Primary
+                )
+            }
+        }
+
+        // ── Dropdown overlay — rendered last so it's on top ──
+        AnimatedVisibility(
+            visible = menuExpanded,
+            enter = scaleIn(
+                initialScale = 0.85f,
+                transformOrigin = androidx.compose.ui.graphics.TransformOrigin(1f, 0f),
+                animationSpec = spring(dampingRatio = 0.35f, stiffness = 450f)
+            ) + fadeIn(animationSpec = spring(dampingRatio = 0.40f, stiffness = 400f)),
+            exit = scaleOut(
+                targetScale = 0.85f,
+                transformOrigin = androidx.compose.ui.graphics.TransformOrigin(1f, 0f),
+                animationSpec = spring(dampingRatio = 0.50f, stiffness = 500f)
+            ) + fadeOut(animationSpec = tween(80))
+        ) {
+            // Full-screen transparent backdrop — tap anywhere to dismiss
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .clickable(
+                        indication = null,
+                        interactionSource = remember { MutableInteractionSource() }
+                    ) { menuExpanded = false }
+            ) {
+                // The menu itself — positioned top-end, offset below the button
+                Box(
                     modifier = Modifier
-                        .align(Alignment.BottomCenter)
-                        .fillMaxWidth()
-                        .padding(horizontal = 20.dp, vertical = 12.dp)
-                        .height(56.dp)
-                        .shadow(
-                            elevation = if (isAnswerModeActive) 0.dp else 16.dp,
-                            shape = RoundedCornerShape(18.dp),
-                            ambientColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.4f),
-                            spotColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.3f)
-                        ),
-                    shape = RoundedCornerShape(18.dp),
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = Color.Transparent
-                    ),
-                    contentPadding = PaddingValues(0.dp)
+                        .align(Alignment.TopEnd)
+                        .offset(x = (-16).dp, y = 100.dp)
+                        .width(180.dp)
+                        .clip(RoundedCornerShape(16.dp))
+                        .then(
+                            if (isDark)
+                                Modifier
+                                    .background(GlassDark.copy(alpha = 0.14f))
+                                    .border(0.5.dp, GlassDarkBorder.copy(alpha = 0.18f), RoundedCornerShape(16.dp))
+                            else
+                                Modifier
+                                    .background(GlassWhiteBorder)
+                                    .border(0.5.dp, GlassWhiteBorder, RoundedCornerShape(16.dp))
+                        )
+                        .shadowElevated(16.dp)
+                        // Prevent tap on menu from propagating to backdrop
+                        .clickable(
+                            indication = null,
+                            interactionSource = remember { MutableInteractionSource() }
+                        ) { }
                 ) {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .background(
-                                brush = Brush.horizontalGradient(
-                                    colors = if (isAnswerModeActive)
-                                        listOf(
-                                            MaterialTheme.colorScheme.error,
-                                            MaterialTheme.colorScheme.error.copy(alpha = 0.7f)
-                                        )
-                                    else
-                                        listOf(
-                                            MaterialTheme.colorScheme.primary,
-                                            MaterialTheme.colorScheme.secondary
-                                        )
-                                ),
-                                shape = RoundedCornerShape(18.dp)
-                            ),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(
-                                imageVector = if (isAnswerModeActive) Icons.Default.Close else Icons.Default.PlayArrow,
-                                contentDescription = null,
-                                tint = Color.White,
-                                modifier = Modifier.size(22.dp)
-                            )
-                            Spacer(Modifier.width(10.dp))
+                    Column(modifier = Modifier.padding(vertical = 6.dp)) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable { menuExpanded = false; onMenuItemClick(MenuItem.SETTINGS) }
+                                .padding(horizontal = 16.dp, vertical = 12.dp)
+                        ) {
                             Text(
-                                text = if (isAnswerModeActive)
-                                    stringResource(R.string.button_stop_mode)
-                                else stringResource(R.string.button_start_mode),
-                                color = Color.White,
-                                fontWeight = FontWeight.SemiBold,
-                                fontSize = 16.sp
+                                text = stringResource(R.string.menu_settings),
+                                style = MaterialTheme.typography.bodyLarge,
+                                color = if (isDark) TextDarkPrimary else TextDark
+                            )
+                        }
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 16.dp)
+                                .height(0.5.dp)
+                                .background(if (isDark) Color.White.copy(alpha = 0.08f) else Color.Black.copy(alpha = 0.06f))
+                        )
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable { menuExpanded = false; onMenuItemClick(MenuItem.ABOUT) }
+                                .padding(horizontal = 16.dp, vertical = 12.dp)
+                        ) {
+                            Text(
+                                text = stringResource(R.string.menu_about),
+                                style = MaterialTheme.typography.bodyLarge,
+                                color = if (isDark) TextDarkPrimary else TextDark
                             )
                         }
                     }
@@ -623,14 +712,13 @@ fun MainScreen(
         }
     }
 
-    // Dialog组件放置在Scaffold外部，确保它们正确显示在最上层
+    // Dialogs
     if (showLanguageDialog) {
         LanguageSelectionDialog(
             onDismiss = onLanguageDialogDismiss,
             onLanguageConfirmed = onLanguageConfirmed
         )
     }
-
     if (showModelSetupDialog) {
         ModelSetupReminderDialog(
             onDismiss = onModelSetupDismiss,
@@ -639,134 +727,74 @@ fun MainScreen(
     }
 }
 
-/**
- * 可展开/收起的使用说明卡片
- * @param context Android上下文，用于打开链接
- */
 @Composable
 fun UsageGuideCard(context: Context) {
-    // 展开/收起状态
     var isExpanded by remember { mutableStateOf(false) }
-
-    // 展开图标的旋转动画
+    val isDark = LocalIsDarkMode.current
     val rotationAngle by animateFloatAsState(
         targetValue = if (isExpanded) 180f else 0f,
-        label = "expand_icon_rotation"
+        animationSpec = spring(dampingRatio = 0.35f, stiffness = 400f),
+        label = "expand_icon"
     )
 
-    val isDark = isSystemInDarkTheme()
-    val cornerRadius = 20.dp
-
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(cornerRadius),
-        colors = CardDefaults.cardColors(containerColor = Color.Transparent),
-        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
-    ) {
-        Box(
+    InfoCard(modifier = Modifier.padding(bottom = 0.dp)) {
+        Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .background(
-                    brush = if (isDark) {
-                        Brush.verticalGradient(
-                            colors = listOf(
-                                MaterialTheme.colorScheme.surface.copy(alpha = 0.45f),
-                                MaterialTheme.colorScheme.surface.copy(alpha = 0.25f)
-                            )
-                        )
-                    } else {
-                        Brush.verticalGradient(
-                            colors = listOf(
-                                MaterialTheme.colorScheme.surface.copy(alpha = 0.7f),
-                                MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)
-                            )
-                        )
-                    },
-                    shape = RoundedCornerShape(cornerRadius)
-                )
-                .border(
-                    width = if (isDark) 1.dp else 0.5.dp,
-                    brush = if (isDark) {
-                        Brush.verticalGradient(
-                            colors = listOf(
-                                MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f),
-                                MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.15f)
-                            )
-                        )
-                    } else {
-                        Brush.verticalGradient(
-                            colors = listOf(
-                                MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f),
-                                MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.1f)
-                            )
-                        )
-                    },
-                    shape = RoundedCornerShape(cornerRadius)
-                )
+                .clickable { isExpanded = !isExpanded }
+                .padding(bottom = if (isExpanded) Spacing.lg else 0.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
         ) {
-            Column(
-                modifier = Modifier.padding(20.dp)
-            ) {
-                // 标题行，包含展开/收起按钮
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clickable { isExpanded = !isExpanded }
-                        .padding(bottom = 16.dp),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(
-                    text = stringResource(R.string.usage_guide_title),
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold
-                )
-
-                // 展开/收起图标
-                Icon(
-                    imageVector = Icons.Default.KeyboardArrowDown,
-                    contentDescription = if (isExpanded) "收起" else "展开",
-                    modifier = Modifier
-                        .size(24.dp)
-                        .graphicsLayer(rotationZ = rotationAngle),
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-
-            // 始终显示的内容
-            FeatureItem(stringResource(R.string.usage_step_0), context)
-            FeatureItem(stringResource(R.string.usage_step_1), context)
-            FeatureItem(stringResource(R.string.usage_step_2), context)
-            FeatureItem(stringResource(R.string.usage_step_3), context)
-            FeatureItem(stringResource(R.string.usage_step_4), context)
-            FeatureItem(stringResource(R.string.usage_step_5), context)
-
-            // 可展开的其余内容
-            AnimatedVisibility(
-                visible = isExpanded,
-                enter = expandVertically(),
-                exit = shrinkVertically()
-            ) {
-                Column {
-                    FeatureItem(
-                        context = context,
-                        text = stringResource(R.string.usage_step_6_text),
-                        urlText = stringResource(R.string.link_close_screen_protection),
-                        url = stringResource(R.string.usage_step_6_url)
-                    )
-                    FeatureItem(
-                        context = context,
-                        text = stringResource(R.string.usage_step_7_text),
-                        urlText = stringResource(R.string.usage_step_7_link),
-                        url = stringResource(R.string.usage_step_7_url)
-                    )
-                    FeatureItem(
-                        context = context,
-                        text = stringResource(R.string.usage_step_8)
-                    )
-                }
-            }
+            Text(
+                text = stringResource(R.string.usage_guide_title),
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.SemiBold,
+                color = if (isDark) TextDarkPrimary else TextDark
+            )
+            Icon(
+                imageVector = Icons.Default.KeyboardArrowDown,
+                contentDescription = if (isExpanded) "收起" else "展开",
+                modifier = Modifier
+                    .size(24.dp)
+                    .graphicsLayer(rotationZ = rotationAngle),
+                tint = if (isDark) TextDarkSecondary else TextTertiary
+            )
         }
+
+        FeatureItem(stringResource(R.string.usage_step_0), context)
+        FeatureItem(stringResource(R.string.usage_step_1), context)
+        FeatureItem(stringResource(R.string.usage_step_2), context)
+        FeatureItem(stringResource(R.string.usage_step_3), context)
+        FeatureItem(stringResource(R.string.usage_step_4), context)
+        FeatureItem(stringResource(R.string.usage_step_5), context)
+
+        AnimatedVisibility(
+            visible = isExpanded,
+            enter = expandVertically(
+                expandFrom = Alignment.Top,
+                animationSpec = spring(dampingRatio = 0.35f, stiffness = 450f)
+            ) + fadeIn(animationSpec = spring(dampingRatio = 0.40f, stiffness = 400f)),
+            exit = shrinkVertically(
+                shrinkTowards = Alignment.Top,
+                animationSpec = spring(dampingRatio = 0.40f, stiffness = 500f)
+            ) + fadeOut(animationSpec = tween(100))
+        ) {
+            Column {
+                FeatureItem(
+                    context = context,
+                    text = stringResource(R.string.usage_step_6_text),
+                    urlText = stringResource(R.string.link_close_screen_protection),
+                    url = stringResource(R.string.usage_step_6_url)
+                )
+                FeatureItem(
+                    context = context,
+                    text = stringResource(R.string.usage_step_7_text),
+                    urlText = stringResource(R.string.usage_step_7_link),
+                    url = stringResource(R.string.usage_step_7_url)
+                )
+                FeatureItem(context = context, text = stringResource(R.string.usage_step_8))
+            }
         }
     }
 }
@@ -785,17 +813,24 @@ fun FeatureItem(
     urlText: String? = null,
     url: String? = null
 ) {
-    // 获取主题颜色和样式
-    val primaryColor = MaterialTheme.colorScheme.primary
-    val onSurfaceColor = MaterialTheme.colorScheme.onSurface
+    val isDark = LocalIsDarkMode.current
+    val primaryColor = PremiumPrimary
+    val textColor = if (isDark) TextDarkPrimary else TextDark
     val bodyMediumStyle = MaterialTheme.typography.bodyMedium
 
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(vertical = 4.dp),
+            .padding(vertical = 5.dp),
         verticalAlignment = Alignment.Top
     ) {
+        // 彩色小圆点 bullet
+        Box(
+            modifier = Modifier
+                .padding(top = 8.dp, end = 10.dp)
+                .size(6.dp)
+                .background(primaryColor, RoundedCornerShape(3.dp))
+        )
         // 如果有链接参数，构建带链接的文本
         if (urlText != null && url != null) {
             val annotatedString = remember(text, urlText, url, primaryColor) {
@@ -823,7 +858,7 @@ fun FeatureItem(
             ClickableText(
                 text = annotatedString,
                 style = bodyMediumStyle.copy(
-                    color = onSurfaceColor
+                    color = textColor
                 ),
                 onClick = { offset ->
                     // 检查点击位置是否在URL上
@@ -851,16 +886,13 @@ fun FeatureItem(
             Text(
                 text = text,
                 style = bodyMediumStyle,
-                color = onSurfaceColor
+                color = textColor
             )
         }
     }
 }
 
-/**
- * 本次答题设置卡片
- */
-@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun SessionSettingsCard(
     selectedQuestionTypes: Set<String>,
@@ -869,7 +901,6 @@ fun SessionSettingsCard(
     onCropModeChanged: (String) -> Unit,
     enabled: Boolean = true
 ) {
-    // 所有可选的题型
     val allQuestionTypes = listOf(
         stringResource(R.string.question_type_single),
         stringResource(R.string.question_type_multiple),
@@ -878,211 +909,53 @@ fun SessionSettingsCard(
         stringResource(R.string.question_type_essay)
     )
 
-    val isDark = isSystemInDarkTheme()
-    val cornerRadius = 20.dp
+    InfoCard {
+        // Section label
+        SectionLabel(stringResource(R.string.question_type_label))
 
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(cornerRadius),
-        colors = CardDefaults.cardColors(containerColor = Color.Transparent),
-        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
-    ) {
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .background(
-                    brush = if (isDark) {
-                        Brush.verticalGradient(
-                            colors = listOf(
-                                MaterialTheme.colorScheme.surface.copy(alpha = 0.45f),
-                                MaterialTheme.colorScheme.surface.copy(alpha = 0.25f)
-                            )
-                        )
-                    } else {
-                        Brush.verticalGradient(
-                            colors = listOf(
-                                MaterialTheme.colorScheme.surface.copy(alpha = 0.7f),
-                                MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)
-                            )
-                        )
-                    },
-                    shape = RoundedCornerShape(cornerRadius)
-                )
-                .border(
-                    width = if (isDark) 1.dp else 0.5.dp,
-                    brush = if (isDark) {
-                        Brush.verticalGradient(
-                            colors = listOf(
-                                MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f),
-                                MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.15f)
-                            )
-                        )
-                    } else {
-                        Brush.verticalGradient(
-                            colors = listOf(
-                                MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f),
-                                MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.1f)
-                            )
-                        )
-                    },
-                    shape = RoundedCornerShape(cornerRadius)
-                )
+        // Question type chips
+        FlowRow(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(Spacing.sm),
+            verticalArrangement = Arrangement.spacedBy(Spacing.xs)
         ) {
-            Column(
-                modifier = Modifier.padding(20.dp)
-            ) {
-                Text(
-                    text = stringResource(R.string.session_settings_title),
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.SemiBold,
-                    modifier = Modifier.padding(bottom = 4.dp)
-                )
-                Text(
-                    text = stringResource(R.string.session_settings_desc),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(bottom = 8.dp)
-                )
-
-                // 题型选择标签
-                Text(
-                    text = stringResource(R.string.question_type_label),
-                    style = MaterialTheme.typography.titleSmall,
-                    fontWeight = FontWeight.Medium,
-                    modifier = Modifier.padding(bottom = 6.dp)
-                )
-
-                // 题型多选Chips
-                FlowRow(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    verticalArrangement = Arrangement.spacedBy(4.dp)
-                ) {
-                allQuestionTypes.forEach { type ->
-                    val isSelected = selectedQuestionTypes.contains(type)
-                    FilterChip(
-                        selected = isSelected,
-                        onClick = {
-                            val newTypes = if (isSelected) {
-                                if (selectedQuestionTypes.size > 1) {
-                                    selectedQuestionTypes - type
-                                } else {
-                                    selectedQuestionTypes
-                                }
-                            } else {
-                                selectedQuestionTypes + type
-                            }
-                            onQuestionTypesChanged(newTypes)
-                        },
-                        label = {
-                            Text(
-                                text = type,
-                                fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal
-                            )
-                        },
-                        enabled = enabled,
-                        shape = RoundedCornerShape(50),
-                        colors = FilterChipDefaults.filterChipColors(
-                            selectedContainerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.12f),
-                            selectedLabelColor = MaterialTheme.colorScheme.primary,
-                            containerColor = MaterialTheme.colorScheme.surface,
-                            labelColor = MaterialTheme.colorScheme.onSurfaceVariant
-                        ),
-                        border = FilterChipDefaults.filterChipBorder(
-                            enabled = enabled,
-                            selected = isSelected,
-                            borderColor = if (isSelected)
-                                MaterialTheme.colorScheme.primary.copy(alpha = 0.3f)
-                            else
-                                MaterialTheme.colorScheme.outlineVariant,
-                            selectedBorderColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.3f),
-                            borderWidth = 1.dp,
-                            selectedBorderWidth = 1.dp
-                        )
-                    )
-                }
-                }
-
-                Spacer(modifier = Modifier.height(12.dp))
-
-                // 截图识别模式选择
-                Text(
-                    text = stringResource(R.string.crop_mode_label),
-                    style = MaterialTheme.typography.titleSmall,
-                    fontWeight = FontWeight.Medium,
-                    modifier = Modifier.padding(bottom = 6.dp)
-                )
-
-                Column(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalArrangement = Arrangement.spacedBy((-8).dp)
-                ) {
-                    // 全屏识别
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable(enabled = enabled) {
-                                onCropModeChanged(AppConfig.CROP_MODE_FULL)
-                            }
-                            .padding(vertical = 0.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        RadioButton(
-                            selected = cropMode == AppConfig.CROP_MODE_FULL,
-                            onClick = { onCropModeChanged(AppConfig.CROP_MODE_FULL) },
-                            enabled = enabled
-                        )
-                        Text(
-                            text = stringResource(R.string.crop_mode_full),
-                            style = MaterialTheme.typography.bodyMedium,
-                            modifier = Modifier.padding(start = 8.dp)
-                        )
+            allQuestionTypes.forEach { type ->
+                val isSelected = selectedQuestionTypes.contains(type)
+                PremiumChip(
+                    text = type,
+                    selected = isSelected,
+                    onClick = {
+                        val newTypes = if (isSelected) {
+                            if (selectedQuestionTypes.size > 1) selectedQuestionTypes - type
+                            else selectedQuestionTypes
+                        } else {
+                            selectedQuestionTypes + type
+                        }
+                        onQuestionTypesChanged(newTypes)
                     }
+                )
+            }
+        }
 
-                    // 部分识别（每次）
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable(enabled = enabled) {
-                                onCropModeChanged(AppConfig.CROP_MODE_EACH)
-                            }
-                            .padding(vertical = 0.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        RadioButton(
-                            selected = cropMode == AppConfig.CROP_MODE_EACH,
-                            onClick = { onCropModeChanged(AppConfig.CROP_MODE_EACH) },
-                            enabled = enabled
-                        )
-                        Text(
-                            text = stringResource(R.string.crop_mode_each),
-                            style = MaterialTheme.typography.bodyMedium,
-                            modifier = Modifier.padding(start = 8.dp)
-                        )
-                    }
+        Spacer(Modifier.height(Spacing.lg))
 
-                    // 部分识别（单次）
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable(enabled = enabled) {
-                                onCropModeChanged(AppConfig.CROP_MODE_ONCE)
-                            }
-                            .padding(vertical = 0.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        RadioButton(
-                            selected = cropMode == AppConfig.CROP_MODE_ONCE,
-                            onClick = { onCropModeChanged(AppConfig.CROP_MODE_ONCE) },
-                            enabled = enabled
-                        )
-                        Text(
-                            text = stringResource(R.string.crop_mode_once),
-                            style = MaterialTheme.typography.bodyMedium,
-                            modifier = Modifier.padding(start = 8.dp)
-                        )
-                    }
-                }
+        // Crop mode
+        SectionLabel(stringResource(R.string.crop_mode_label))
+
+        FlowRow(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(Spacing.sm)
+        ) {
+            listOf(
+                AppConfig.CROP_MODE_FULL to stringResource(R.string.crop_mode_full),
+                AppConfig.CROP_MODE_EACH to stringResource(R.string.crop_mode_each),
+                AppConfig.CROP_MODE_ONCE to stringResource(R.string.crop_mode_once)
+            ).forEach { (mode, label) ->
+                PremiumChip(
+                    text = label,
+                    selected = cropMode == mode,
+                    onClick = { onCropModeChanged(mode) }
+                )
             }
         }
     }

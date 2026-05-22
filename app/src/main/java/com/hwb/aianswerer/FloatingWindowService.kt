@@ -15,7 +15,7 @@ import android.os.Build
 import android.os.IBinder
 import android.view.Gravity
 import android.view.WindowManager
-import androidx.compose.material3.MaterialTheme
+import com.hwb.aianswerer.ui.theme.AIAnswererTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -35,6 +35,7 @@ import androidx.savedstate.SavedStateRegistryController
 import androidx.savedstate.SavedStateRegistryOwner
 import androidx.savedstate.setViewTreeSavedStateRegistryOwner
 import com.hwb.aianswerer.api.OpenAIClient
+import com.hwb.aianswerer.ui.components.FloatingStatus
 import com.hwb.aianswerer.api.TavilyClient
 import com.hwb.aianswerer.api.vision.VisionProviderFactory
 import com.hwb.aianswerer.config.AppConfig
@@ -84,7 +85,7 @@ class FloatingWindowService : Service(), LifecycleOwner, ViewModelStoreOwner,
         
         // Compose重组等待时间（毫秒）
         // 确保UI状态更新完成后再进行截图
-        private const val COMPOSE_RECOMPOSITION_DELAY_MS = 150L
+        private const val COMPOSE_RECOMPOSITION_DELAY_MS = 100L
     }
 
     private lateinit var windowManager: WindowManager
@@ -97,6 +98,7 @@ class FloatingWindowService : Service(), LifecycleOwner, ViewModelStoreOwner,
     private var answerText = mutableStateOf<String?>(null)
     private var showAnswer = mutableStateOf(false)
     private var statusMessage = mutableStateOf<String?>(null)
+    private var floatingStatus = mutableStateOf(FloatingStatus.Idle)
     private var questionTypes = mutableSetOf<String>()
     private var cropMode = AppConfig.CROP_MODE_FULL
     // savedCropRect: 单次模式(once)首次裁剪后缓存，后续截图直接复用
@@ -293,7 +295,7 @@ class FloatingWindowService : Service(), LifecycleOwner, ViewModelStoreOwner,
             setViewTreeSavedStateRegistryOwner(this@FloatingWindowService)
 
             setContent {
-                MaterialTheme {
+                AIAnswererTheme {
                     FloatingWindowContent(
                         answerText = answerText.value,
                         showAnswer = showAnswer.value,
@@ -302,13 +304,18 @@ class FloatingWindowService : Service(), LifecycleOwner, ViewModelStoreOwner,
                         buttonAlpha = AppConfig.getFloatButtonAlpha(),
                         cardAlpha = AppConfig.getFloatCardAlpha(),
                         isLeftSide = isLeftSide(),
+                        floatingStatus = floatingStatus.value,
                         onCaptureClick = { handleCapture() },
                         onCloseAnswer = {
                             showAnswer.value = false
                             answerText.value = null
+                            floatingStatus.value = FloatingStatus.Idle
                         },
                         onCloseStatus = {
                             statusMessage.value = null
+                        },
+                        onCopyAnswer = {
+                            ClipboardUtil.copyToClipboard(this@FloatingWindowService, answerText.value ?: "")
                         },
                         onMove = { deltaX, deltaY ->
                             floatOffsetX.value = (floatOffsetX.value + deltaX)
@@ -350,6 +357,14 @@ class FloatingWindowService : Service(), LifecycleOwner, ViewModelStoreOwner,
                 showAnswer.value = false
                 answerText.value = null
 
+                // 检查是否使用无障碍屏幕读取模式
+                if (AppConfig.isAccessibilityCaptureMode()) {
+                    handleAccessibilityCapture()
+                    return@launch
+                }
+
+                // === 截图模式 ===
+                floatingStatus.value = FloatingStatus.Capturing
                 statusMessage.value = getString(R.string.status_capturing)
 
                 // 等待 Compose 重组完成，确保上一次的答案卡片已从屏幕上移除，
@@ -395,6 +410,41 @@ class FloatingWindowService : Service(), LifecycleOwner, ViewModelStoreOwner,
             } catch (e: Exception) {
                 showErrorMessage(getString(R.string.status_operation_failed, e.message ?: ""))
             }
+        }
+    }
+
+    /**
+     * 无障碍模式采集：直接读取屏幕文本，无需截图
+     */
+    private suspend fun handleAccessibilityCapture() {
+        floatingStatus.value = FloatingStatus.Recognizing
+        statusMessage.value = getString(R.string.status_reading_screen)
+
+        // 等待 Compose 重组完成，避免读取到旧答案卡片
+        delay(COMPOSE_RECOMPOSITION_DELAY_MS)
+
+        val screenText = ScreenReaderService.readScreenText()
+        if (screenText.isNullOrBlank()) {
+            showErrorMessage(getString(R.string.status_screen_read_failed))
+            return
+        }
+
+        statusMessage.value = getString(R.string.status_recognized)
+
+        val autoSubmit = AppConfig.getAutoSubmit()
+        if (autoSubmit) {
+            fetchAnswer(screenText)
+        } else {
+            val intent = Intent(
+                this@FloatingWindowService,
+                ConfirmTextActivity::class.java
+            ).apply {
+                putExtra(Constants.EXTRA_RECOGNIZED_TEXT, screenText)
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            startActivity(intent)
+            delay(2000)
+            statusMessage.value = null
         }
     }
 
@@ -496,6 +546,7 @@ class FloatingWindowService : Service(), LifecycleOwner, ViewModelStoreOwner,
      * OCR模式处理
      */
     private suspend fun processBitmapWithOcr(bitmap: android.graphics.Bitmap) {
+        floatingStatus.value = FloatingStatus.Recognizing
         statusMessage.value = getString(R.string.status_recognizing)
 
         val result = textRecognitionManager.recognizeText(bitmap)
@@ -528,6 +579,7 @@ class FloatingWindowService : Service(), LifecycleOwner, ViewModelStoreOwner,
      * VLM模式处理：使用视觉模型提取文本和元数据
      */
     private suspend fun processBitmapWithVlm(bitmap: android.graphics.Bitmap) {
+        floatingStatus.value = FloatingStatus.Recognizing
         statusMessage.value = getString(R.string.status_vision_analyzing)
 
         val provider = VisionProviderFactory.create()
@@ -623,6 +675,7 @@ class FloatingWindowService : Service(), LifecycleOwner, ViewModelStoreOwner,
                 // VLM模式：使用VLM提供的搜索关键词
                 if (visionResult != null) {
                     if (visionResult.searchKeywords.isNotBlank() && AppConfig.isTavilyConfigValid()) {
+                        floatingStatus.value = FloatingStatus.Searching
                         statusMessage.value = getString(R.string.status_searching)
                         AppLog.d("Tavily搜索(VLM关键词): ${visionResult.searchKeywords}")
 
@@ -645,6 +698,7 @@ class FloatingWindowService : Service(), LifecycleOwner, ViewModelStoreOwner,
                     val isMultiQuestion = AppConfig.isRegexFilterEnabled() && multiQuestionPattern.containsMatchIn(text)
 
                     if (!isMultiQuestion && AppConfig.isTavilyConfigValid()) {
+                        floatingStatus.value = FloatingStatus.Searching
                         statusMessage.value = getString(R.string.status_searching)
                         val lines = text.lines()
                         val questionLine = lines.firstOrNull { it.contains("?") || it.contains("？") }?.trim()
@@ -671,6 +725,7 @@ class FloatingWindowService : Service(), LifecycleOwner, ViewModelStoreOwner,
                 }
 
                 // ========== LLM答题 ==========
+                floatingStatus.value = FloatingStatus.GettingAnswer
                 statusMessage.value = getString(R.string.status_getting_answer)
 
                 val apiClient = OpenAIClient.getInstance()
@@ -880,11 +935,19 @@ class FloatingWindowService : Service(), LifecycleOwner, ViewModelStoreOwner,
         }
 
         if (autoCopy) {
-            ClipboardUtil.copyToClipboard(this@FloatingWindowService, formattedAnswer)
+            val copyText = if (aiAnswers.size == 1) {
+                aiAnswers.first().answer
+            } else {
+                aiAnswers.mapIndexed { index, ans ->
+                    "第 ${index + 1} 题：${ans.answer}"
+                }.joinToString("\n")
+            }
+            ClipboardUtil.copyToClipboard(this@FloatingWindowService, copyText)
         }
 
         answerText.value = formattedAnswer
         showAnswer.value = true
+        floatingStatus.value = FloatingStatus.Success
 
         statusMessage.value = if (autoCopy) getString(R.string.status_answer_copied) else getString(R.string.status_answer_generated)
         delay(2000)
@@ -959,6 +1022,7 @@ class FloatingWindowService : Service(), LifecycleOwner, ViewModelStoreOwner,
     }
 
     private fun showErrorMessage(message: String) {
+        floatingStatus.value = FloatingStatus.Error
         showStatusMessage(getString(R.string.status_error_prefix, message), 5000)
         AppLog.e(message)
     }

@@ -241,7 +241,7 @@ class OpenAIClient {
         }
 
         // 策略4：正则提取单个 JSON 对象（非贪婪匹配）
-        val objRegex = Regex("""\{[^{}]*}""")
+        val objRegex = Regex("""\{[^\{\}]*\}""")
         objRegex.find(trimmed)?.let { match ->
             val candidate = fixMalformedJson(match.value)
             try {

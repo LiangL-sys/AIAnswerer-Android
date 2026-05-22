@@ -5,6 +5,7 @@ import android.content.Intent
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -31,6 +32,7 @@ import com.hwb.aianswerer.ui.components.InfoCard
 import com.hwb.aianswerer.ui.components.LibraryItem
 import com.hwb.aianswerer.ui.components.TopBarWithBack
 import com.hwb.aianswerer.ui.theme.AIAnswererTheme
+import com.hwb.aianswerer.ui.theme.*
 import com.hwb.aianswerer.utils.LanguageUtil
 
 /**
@@ -73,9 +75,11 @@ fun AboutScreen(
             )
         }
     ) { paddingValues ->
+        val isDark = LocalIsDarkMode.current
         Column(
             modifier = Modifier
                 .fillMaxSize()
+                .background(if (isDark) PremiumBgDark else PremiumBgLight)
                 .padding(paddingValues)
                 .padding(horizontal = 16.dp)
                 .verticalScroll(rememberScrollState())
@@ -90,7 +94,7 @@ fun AboutScreen(
                 Text(
                     text = stringResource(R.string.about_app_intro),
                     style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurface
+                    color = if (isDark) TextDarkPrimary else TextDark
                 )
             }
 
@@ -106,7 +110,7 @@ fun AboutScreen(
                         BuildConfig.VERSION_CODE
                     ),
                     style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurface
+                    color = if (isDark) TextDarkPrimary else TextDark
                 )
             }
 
@@ -157,7 +161,7 @@ fun AboutScreen(
                     Text(
                         text = stringResource(R.string.about_github_link),
                         style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.primary
+                        color = PremiumPrimary
                     )
                 }
             }

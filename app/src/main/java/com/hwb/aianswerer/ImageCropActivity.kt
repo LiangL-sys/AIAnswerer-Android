@@ -51,6 +51,9 @@ import com.hwb.aianswerer.ui.theme.AIAnswererTheme
 import com.hwb.aianswerer.utils.AppLog
 import com.hwb.aianswerer.utils.ImageCropUtil
 import com.hwb.aianswerer.utils.LanguageUtil
+import com.hwb.aianswerer.ui.theme.PremiumPrimaryVariant
+import com.hwb.aianswerer.ui.theme.DarkAccent
+import com.hwb.aianswerer.ui.theme.SuccessGreen
 import kotlin.math.min
 import kotlin.math.sqrt
 
@@ -411,7 +414,7 @@ fun ImageCropScreen(
 
                 // 绘制选择框边框（虚线）
                 drawRect(
-                    color = Color(0xFF2196F3),
+                    color = PremiumPrimaryVariant,
                     topLeft = Offset(cropLeft, cropTop),
                     size = Size(cropRight - cropLeft, cropBottom - cropTop),
                     style = Stroke(
@@ -422,7 +425,7 @@ fun ImageCropScreen(
 
                 // 绘制四个角的拖动点
                 val cornerRadius = 12f
-                val cornerColor = Color(0xFF2196F3)
+                val cornerColor = PremiumPrimaryVariant
                 val cornerStrokeColor = Color.White
 
                 // 左上角
@@ -561,7 +564,7 @@ fun ImageCropScreen(
                         },
                         modifier = Modifier.weight(1f),
                         colors = ButtonDefaults.buttonColors(
-                            containerColor = Color(0xFF2196F3)
+                            containerColor = DarkAccent
                         )
                     ) {
                         Text(

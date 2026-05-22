@@ -4,6 +4,7 @@
 
     <!-- 主界面 -->
     <string name="main_title">AI答题助手</string>
+    <string name="main_subtitle">截屏 · 识别 · AI 答题，一气呵成</string>
     <string name="status_label">当前状态</string>
     <string name="status_running">答题模式运行中</string>
     <string name="status_running_desc">悬浮窗已显示</string>
@@ -305,6 +306,17 @@
     <string name="status_vision_detected_multi">📋 检测到 %d 道题目</string>
     <string name="status_vision_no_question">⚠️ 未检测到题目</string>
     <string name="status_vision_fallback">⚠️ 视觉分析失败，请重试</string>
+
+    <!-- 采集模式设置 -->
+    <string name="setting_capture_mode">采集模式</string>
+    <string name="setting_capture_mode_desc">选择获取屏幕内容的方式</string>
+    <string name="capture_mode_screenshot">截图识别</string>
+    <string name="capture_mode_accessibility">屏幕读取</string>
+    <string name="accessibility_status_enabled">无障碍服务已开启</string>
+    <string name="accessibility_status_disabled">无障碍服务未开启</string>
+    <string name="accessibility_enable_hint">请在系统设置中开启 AI答题助手 的无障碍服务</string>
+    <string name="status_reading_screen">📖 正在读取屏幕内容…</string>
+    <string name="status_screen_read_failed">屏幕读取失败，请确保已开启无障碍服务</string>
 
     <!-- 思考模式设置 -->
     <string name="setting_thinking_mode">启用思考模式</string>

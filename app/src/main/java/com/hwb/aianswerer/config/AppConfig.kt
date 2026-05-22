@@ -47,6 +47,7 @@ object AppConfig {
     private const val KEY_LLM_TEMPERATURE = "llm_temperature"
     private const val KEY_REGEX_FILTER_ENABLED = "regex_filter_enabled"
     private const val KEY_REASONING_EFFORT = "reasoning_effort"
+    private const val KEY_CAPTURE_MODE = "capture_mode"
 
     // 语言代码常量
     const val LANGUAGE_ZH = "zh"
@@ -56,6 +57,10 @@ object AppConfig {
     const val CROP_MODE_FULL = "full"           // 全屏
     const val CROP_MODE_EACH = "each"           // 部分识别（每次）
     const val CROP_MODE_ONCE = "once"           // 部分识别（单次）
+
+    // 采集模式常量
+    const val CAPTURE_MODE_SCREENSHOT = "screenshot"  // 截图 + OCR/VLM
+    const val CAPTURE_MODE_ACCESSIBILITY = "accessibility"  // 无障碍读取屏幕
 
     private lateinit var mmkv: MMKV
     private var securePrefs: SharedPreferences? = null
@@ -316,6 +321,31 @@ object AppConfig {
      */
     fun getCropMode(): String {
         return mmkv.decodeString(KEY_CROP_MODE, CROP_MODE_FULL) ?: CROP_MODE_FULL
+    }
+
+    // ========== 采集模式相关 ==========
+
+    /**
+     * 保存采集模式
+     * @param mode CAPTURE_MODE_SCREENSHOT 或 CAPTURE_MODE_ACCESSIBILITY
+     */
+    fun saveCaptureMode(mode: String) {
+        mmkv.encode(KEY_CAPTURE_MODE, mode)
+    }
+
+    /**
+     * 获取采集模式
+     * @return 采集模式，默认为截图模式
+     */
+    fun getCaptureMode(): String {
+        return mmkv.decodeString(KEY_CAPTURE_MODE, CAPTURE_MODE_SCREENSHOT) ?: CAPTURE_MODE_SCREENSHOT
+    }
+
+    /**
+     * 是否使用无障碍模式采集
+     */
+    fun isAccessibilityCaptureMode(): Boolean {
+        return getCaptureMode() == CAPTURE_MODE_ACCESSIBILITY
     }
 
     // ========== 首次启动相关 ==========
@@ -602,7 +632,7 @@ object AppConfig {
 
     /** 悬浮按钮大小（dp），默认 48 */
     fun getFloatButtonSize(): Int {
-        return mmkv.decodeInt(KEY_FLOAT_BUTTON_SIZE, 48)
+        return mmkv.decodeInt(KEY_FLOAT_BUTTON_SIZE, 56)
     }
 
     fun saveFloatButtonSize(size: Int) {

@@ -1,13 +1,14 @@
 package com.hwb.aianswerer
 
-import android.content.Context
-import android.content.Intent
 import android.os.Bundle
+import android.content.Intent
+import android.provider.Settings
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
-import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -21,27 +22,32 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.RadioButton
+import androidx.compose.material3.RadioButtonDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Slider
-import androidx.compose.material3.Switch
+import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -49,9 +55,8 @@ import com.hwb.aianswerer.api.OpenAIClient
 import com.hwb.aianswerer.api.TavilyClient
 import com.hwb.aianswerer.api.vision.OpenAIVisionProvider
 import com.hwb.aianswerer.config.AppConfig
-import com.hwb.aianswerer.ui.components.TopBarWithBack
-import com.hwb.aianswerer.ui.theme.AIAnswererTheme
-import com.hwb.aianswerer.ui.theme.ThemeState
+import com.hwb.aianswerer.ui.components.*
+import com.hwb.aianswerer.ui.theme.*
 import com.hwb.aianswerer.utils.LanguageUtil
 import kotlinx.coroutines.launch
 
@@ -85,10 +90,6 @@ class SettingsActivity : BaseActivity() {
 
 /**
  * 设置界面
- *
- * @param onBackClick 返回按钮点击事件
- * @param onModelSettingsClick 模型设置按钮点击事件
- * @param onLanguageChange 语言切换回调
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -102,6 +103,23 @@ fun SettingsScreen(
     var autoCopy by remember { mutableStateOf(AppConfig.getAutoCopy()) }
     var showQuestion by remember { mutableStateOf(AppConfig.getShowAnswerCardQuestion()) }
     var showOptions by remember { mutableStateOf(AppConfig.getShowAnswerCardOptions()) }
+
+    // 采集模式设置
+    var captureMode by remember { mutableStateOf(AppConfig.getCaptureMode()) }
+    var isAccessibilityEnabled by remember { mutableStateOf(ScreenReaderService.isActive) }
+    val context = LocalContext.current
+    val lifecycleOwner = LocalLifecycleOwner.current
+
+    // 从无障碍设置页返回时自动刷新状态
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (Lifecycle.Event.ON_RESUME == event) {
+                isAccessibilityEnabled = ScreenReaderService.isActive
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
 
     // 并发设置
     var parallelMode by remember { mutableStateOf(AppConfig.isParallelModeEnabled()) }
@@ -125,6 +143,7 @@ fun SettingsScreen(
     var showRestartDialog by remember { mutableStateOf(false) }
     var selectedLanguage by remember { mutableStateOf<String?>(null) }
     val currentLanguage = LanguageUtil.getCurrentLanguage()
+    val isDark = LocalIsDarkMode.current
 
     Scaffold(
         topBar = {
@@ -137,773 +156,361 @@ fun SettingsScreen(
         Column(
             modifier = Modifier
                 .fillMaxSize()
+                .background(if (isDark) PremiumBgDark else PremiumBgLight)
                 .padding(paddingValues)
-                .padding(horizontal = 16.dp)
+                .padding(horizontal = Spacing.xxl)
                 .verticalScroll(rememberScrollState())
         ) {
-            Spacer(modifier = Modifier.height(16.dp))
+            Spacer(modifier = Modifier.height(Spacing.lg))
 
-            // 模型设置卡片（显眼位置）
-            Card(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clickable { onModelSettingsClick() },
-                shape = RoundedCornerShape(16.dp),
-                colors = CardDefaults.cardColors(
-                    containerColor = MaterialTheme.colorScheme.primaryContainer
-                ),
-                elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
-            ) {
+            // Model settings entry — HighlightCard
+            HighlightCard(
+                title = stringResource(R.string.model_settings_card_title),
+                subtitle = stringResource(R.string.model_settings_card_desc),
+                onClick = onModelSettingsClick,
+                modifier = Modifier.padding(bottom = Spacing.xxl)
+            )
+
+            // ── General Settings ──
+            SectionLabel(stringResource(R.string.settings_title))
+            InfoCard(modifier = Modifier.padding(bottom = Spacing.xl)) {
+                SettingItem(
+                    title = stringResource(R.string.setting_auto_submit),
+                    description = stringResource(R.string.setting_auto_submit_desc),
+                    checked = autoSubmit,
+                    onCheckedChange = { autoSubmit = it; AppConfig.saveAutoSubmit(it) }
+                )
+                SettingItem(
+                    title = stringResource(R.string.setting_auto_copy),
+                    description = stringResource(R.string.setting_auto_copy_desc),
+                    checked = autoCopy,
+                    onCheckedChange = { autoCopy = it; AppConfig.saveAutoCopy(it) }
+                )
+            }
+
+            // ── Capture Mode ──
+            SectionLabel(stringResource(R.string.setting_capture_mode))
+            InfoCard(modifier = Modifier.padding(bottom = Spacing.xl)) {
+                Text(
+                    text = stringResource(R.string.setting_capture_mode_desc),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = if (isDark) TextDarkSecondary else TextTertiary,
+                    modifier = Modifier.padding(bottom = Spacing.md)
+                )
                 Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(20.dp),
-                    verticalAlignment = Alignment.CenterVertically
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(Spacing.sm)
                 ) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            text = stringResource(R.string.model_settings_card_title),
-                            style = MaterialTheme.typography.titleLarge,
-                            fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.onPrimaryContainer
-                        )
-                        Spacer(modifier = Modifier.height(4.dp))
-                        Text(
-                            text = stringResource(R.string.model_settings_card_desc),
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f)
-                        )
-                    }
-                }
-            }
-
-            Spacer(modifier = Modifier.height(24.dp))
-
-            // 通用设置卡片
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(16.dp),
-                colors = CardDefaults.cardColors(
-                    containerColor = MaterialTheme.colorScheme.surface
-                ),
-                elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
-                border = BorderStroke(0.5.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
-            ) {
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(16.dp)
-                ) {
-                    Text(
-                        text = stringResource(R.string.settings_title),
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold,
-                        modifier = Modifier.padding(bottom = 12.dp)
-                    )
-
-                    // 自动提交开关
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(
-                                text = stringResource(R.string.setting_auto_submit),
-                                style = MaterialTheme.typography.titleSmall,
-                                fontWeight = FontWeight.Medium
-                            )
-                            Text(
-                                text = stringResource(R.string.setting_auto_submit_desc),
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier.padding(top = 4.dp)
-                            )
-                        }
-                        Switch(
-                            checked = autoSubmit,
-                            onCheckedChange = {
-                                autoSubmit = it
-                                AppConfig.saveAutoSubmit(it)
-                            }
-                        )
-                    }
-
-                    Spacer(modifier = Modifier.height(16.dp))
-
-                    // 自动复制开关
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(
-                                text = stringResource(R.string.setting_auto_copy),
-                                style = MaterialTheme.typography.titleSmall,
-                                fontWeight = FontWeight.Medium
-                            )
-                            Text(
-                                text = stringResource(R.string.setting_auto_copy_desc),
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier.padding(top = 4.dp)
-                            )
-                        }
-                        Switch(
-                            checked = autoCopy,
-                            onCheckedChange = {
-                                autoCopy = it
-                                AppConfig.saveAutoCopy(it)
-                            }
-                        )
-                    }
-                }
-            }
-
-            Spacer(modifier = Modifier.height(16.dp))
-
-            // 并发答题设置卡片
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(16.dp),
-                colors = CardDefaults.cardColors(
-                    containerColor = MaterialTheme.colorScheme.surface
-                ),
-                elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
-                border = BorderStroke(0.5.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
-            ) {
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(16.dp)
-                ) {
-                    Text(
-                        text = stringResource(R.string.setting_parallel_title),
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold,
-                        modifier = Modifier.padding(bottom = 4.dp)
-                    )
-                    Text(
-                        text = stringResource(R.string.setting_parallel_desc),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.padding(bottom = 12.dp)
-                    )
-
-                    // 并发模式开关
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(
-                                text = stringResource(R.string.setting_parallel_mode),
-                                style = MaterialTheme.typography.titleSmall,
-                                fontWeight = FontWeight.Medium
-                            )
-                            Text(
-                                text = stringResource(R.string.setting_parallel_mode_desc),
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier.padding(top = 4.dp)
-                            )
-                        }
-                        Switch(
-                            checked = parallelMode,
-                            onCheckedChange = {
-                                parallelMode = it
-                                AppConfig.saveParallelMode(it)
-                            }
-                        )
-                    }
-
-                    Spacer(modifier = Modifier.height(12.dp))
-
-                    // 最大并发数滑块
-                    Text(
-                        text = stringResource(R.string.setting_max_concurrency, maxConcurrency.toInt()),
-                        style = MaterialTheme.typography.titleSmall,
-                        fontWeight = FontWeight.Medium
-                    )
-                    Slider(
-                        value = maxConcurrency,
-                        onValueChange = { maxConcurrency = it },
-                        onValueChangeFinished = {
-                            AppConfig.saveMaxConcurrency(maxConcurrency.toInt())
+                    PremiumChip(
+                        text = stringResource(R.string.capture_mode_screenshot),
+                        selected = captureMode == AppConfig.CAPTURE_MODE_SCREENSHOT,
+                        onClick = {
+                            captureMode = AppConfig.CAPTURE_MODE_SCREENSHOT
+                            AppConfig.saveCaptureMode(AppConfig.CAPTURE_MODE_SCREENSHOT)
                         },
-                        valueRange = 1f..10f,
-                        steps = 8,
-                        enabled = parallelMode,
-                        modifier = Modifier.fillMaxWidth()
+                        modifier = Modifier.weight(1f)
                     )
-                    Text(
-                        text = stringResource(R.string.setting_max_concurrency_desc),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    PremiumChip(
+                        text = stringResource(R.string.capture_mode_accessibility),
+                        selected = captureMode == AppConfig.CAPTURE_MODE_ACCESSIBILITY,
+                        onClick = {
+                            captureMode = AppConfig.CAPTURE_MODE_ACCESSIBILITY
+                            AppConfig.saveCaptureMode(AppConfig.CAPTURE_MODE_ACCESSIBILITY)
+                            // 如果无障碍服务未开启，自动跳转到系统设置
+                            if (!isAccessibilityEnabled) {
+                                context.startActivity(
+                                    Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS).apply {
+                                        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                                    }
+                                )
+                            }
+                        },
+                        modifier = Modifier.weight(1f)
                     )
+                }
 
-                    // 高并发警告
-                    if (maxConcurrency > 5) {
-                        Spacer(modifier = Modifier.height(8.dp))
+                // 无障碍模式提示
+                if (captureMode == AppConfig.CAPTURE_MODE_ACCESSIBILITY) {
+                    Spacer(Modifier.height(Spacing.md))
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(8.dp)
+                                .clip(RoundedCornerShape(50))
+                                .background(if (isAccessibilityEnabled) SuccessGreen else ErrorRed)
+                        )
+                        Spacer(Modifier.width(Spacing.sm))
                         Text(
-                            text = stringResource(R.string.setting_concurrency_warning),
+                            text = if (isAccessibilityEnabled)
+                                stringResource(R.string.accessibility_status_enabled)
+                            else
+                                stringResource(R.string.accessibility_status_disabled),
                             style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.error
+                            color = if (isAccessibilityEnabled) SuccessGreen else ErrorRed
                         )
                     }
-
-                    Spacer(modifier = Modifier.height(16.dp))
-
-                    // 测试并发性能
-                    Text(
-                        text = stringResource(R.string.setting_test_concurrency),
-                        style = MaterialTheme.typography.titleSmall,
-                        fontWeight = FontWeight.Medium,
-                        modifier = Modifier.padding(bottom = 8.dp)
-                    )
-
-                    // 测试按钮行
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        // 测试LLM按钮
-                        OutlinedButton(
-                            onClick = {
-                                llmTestState = TestConnectionState.Testing
-                                coroutineScope.launch {
-                                    val result = OpenAIClient.getInstance().testConcurrency()
-                                    llmTestState = result.fold(
-                                        onSuccess = { TestConnectionState.Success(it) },
-                                        onFailure = { TestConnectionState.Error(it.message ?: "未知错误") }
-                                    )
-                                }
-                            },
-                            enabled = parallelMode && llmTestState !is TestConnectionState.Testing,
-                            modifier = Modifier.weight(1f)
-                        ) {
-                            if (llmTestState is TestConnectionState.Testing) {
-                                CircularProgressIndicator(modifier = Modifier.size(16.dp))
-                            } else {
-                                Text(stringResource(R.string.setting_test_llm))
+                    if (!isAccessibilityEnabled) {
+                        Spacer(Modifier.height(Spacing.sm))
+                        Text(
+                            text = stringResource(R.string.accessibility_enable_hint),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = PremiumPrimary,
+                            modifier = Modifier.clickable {
+                                context.startActivity(
+                                    Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS).apply {
+                                        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                                    }
+                                )
                             }
-                        }
-
-                        // 测试VLM按钮
-                        OutlinedButton(
-                            onClick = {
-                                vlmTestState = TestConnectionState.Testing
-                                coroutineScope.launch {
-                                    val result = OpenAIVisionProvider.testConcurrency()
-                                    vlmTestState = result.fold(
-                                        onSuccess = { TestConnectionState.Success(it) },
-                                        onFailure = { TestConnectionState.Error(it.message ?: "未知错误") }
-                                    )
-                                }
-                            },
-                            enabled = parallelMode && vlmTestState !is TestConnectionState.Testing,
-                            modifier = Modifier.weight(1f)
-                        ) {
-                            if (vlmTestState is TestConnectionState.Testing) {
-                                CircularProgressIndicator(modifier = Modifier.size(16.dp))
-                            } else {
-                                Text(stringResource(R.string.setting_test_vlm))
-                            }
-                        }
-
-                        // 测试搜索按钮
-                        OutlinedButton(
-                            onClick = {
-                                searchTestState = TestConnectionState.Testing
-                                coroutineScope.launch {
-                                    val result = TavilyClient.getInstance().testConcurrency()
-                                    searchTestState = result.fold(
-                                        onSuccess = { TestConnectionState.Success(it) },
-                                        onFailure = { TestConnectionState.Error(it.message ?: "未知错误") }
-                                    )
-                                }
-                            },
-                            enabled = parallelMode && searchTestState !is TestConnectionState.Testing,
-                            modifier = Modifier.weight(1f)
-                        ) {
-                            if (searchTestState is TestConnectionState.Testing) {
-                                CircularProgressIndicator(modifier = Modifier.size(16.dp))
-                            } else {
-                                Text(stringResource(R.string.setting_test_search))
-                            }
-                        }
-                    }
-
-                    // 测试结果提示 - 分别显示每个测试的结果
-                    val hasAnyResult = llmTestState !is TestConnectionState.Idle ||
-                            vlmTestState !is TestConnectionState.Idle ||
-                            searchTestState !is TestConnectionState.Idle
-
-                    if (hasAnyResult) {
-                        Spacer(modifier = Modifier.height(8.dp))
-
-                        // LLM测试结果
-                        when (llmTestState) {
-                            is TestConnectionState.Success -> Text(
-                                text = stringResource(R.string.test_result_success, "LLM", (llmTestState as TestConnectionState.Success).latencyMs),
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.primary
-                            )
-                            is TestConnectionState.Error -> Text(
-                                text = stringResource(R.string.test_result_error, "LLM", (llmTestState as TestConnectionState.Error).message),
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.error
-                            )
-                            else -> {}
-                        }
-
-                        // VLM测试结果
-                        when (vlmTestState) {
-                            is TestConnectionState.Success -> Text(
-                                text = stringResource(R.string.test_result_success, "VLM", (vlmTestState as TestConnectionState.Success).latencyMs),
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.primary
-                            )
-                            is TestConnectionState.Error -> Text(
-                                text = stringResource(R.string.test_result_error, "VLM", (vlmTestState as TestConnectionState.Error).message),
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.error
-                            )
-                            else -> {}
-                        }
-
-                        // 搜索测试结果
-                        when (searchTestState) {
-                            is TestConnectionState.Success -> Text(
-                                text = stringResource(R.string.test_result_success, "搜索", (searchTestState as TestConnectionState.Success).latencyMs),
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.primary
-                            )
-                            is TestConnectionState.Error -> Text(
-                                text = stringResource(R.string.test_result_error, "搜索", (searchTestState as TestConnectionState.Error).message),
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.error
-                            )
-                            else -> {}
-                        }
+                        )
                     }
                 }
             }
 
-            Spacer(modifier = Modifier.height(16.dp))
-
-            // 答题卡片显示控制卡片
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(16.dp),
-                colors = CardDefaults.cardColors(
-                    containerColor = MaterialTheme.colorScheme.surface
-                ),
-                elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
-                border = BorderStroke(0.5.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
-            ) {
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(16.dp)
-                ) {
-                    Text(
-                        text = stringResource(R.string.setting_display_control_title),
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold,
-                        modifier = Modifier.padding(bottom = 4.dp)
+            // ── Parallel Mode ──
+            SectionLabel(stringResource(R.string.setting_parallel_title))
+            InfoCard(modifier = Modifier.padding(bottom = Spacing.xl)) {
+                SettingItem(
+                    title = stringResource(R.string.setting_parallel_mode),
+                    description = stringResource(R.string.setting_parallel_mode_desc),
+                    checked = parallelMode,
+                    onCheckedChange = {
+                        parallelMode = it
+                        AppConfig.saveParallelMode(it)
+                    }
+                )
+                Spacer(Modifier.height(Spacing.md))
+                Text(
+                    text = stringResource(R.string.setting_max_concurrency, maxConcurrency.toInt()),
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.SemiBold,
+                    color = if (isDark) TextDarkPrimary else TextDark
+                )
+                Slider(
+                    value = maxConcurrency,
+                    onValueChange = { maxConcurrency = it },
+                    onValueChangeFinished = { AppConfig.saveMaxConcurrency(maxConcurrency.toInt()) },
+                    valueRange = 1f..10f, steps = 8,
+                    enabled = parallelMode,
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = SliderDefaults.colors(
+                        thumbColor = PremiumPrimary,
+                        activeTrackColor = PremiumPrimary,
+                        inactiveTrackColor = if (isDark) GlassDarkBorder else InputBorder
                     )
+                )
+                if (maxConcurrency > 5) {
                     Text(
-                        text = stringResource(R.string.setting_display_control_desc),
+                        text = stringResource(R.string.setting_concurrency_warning),
                         style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.padding(bottom = 12.dp)
+                        color = ErrorRed
                     )
-
-                    // 显示题目开关
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
+                }
+                // Test buttons
+                Spacer(Modifier.height(Spacing.md))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(Spacing.sm)
+                ) {
+                    OutlinedButton(
+                        onClick = {
+                            llmTestState = TestConnectionState.Testing
+                            coroutineScope.launch {
+                                val result = OpenAIClient.getInstance().testConcurrency()
+                                llmTestState = result.fold(
+                                    onSuccess = { TestConnectionState.Success(it) },
+                                    onFailure = { TestConnectionState.Error(it.message ?: "未知错误") }
+                                )
+                            }
+                        },
+                        enabled = parallelMode && llmTestState !is TestConnectionState.Testing,
+                        modifier = Modifier.weight(1f)
                     ) {
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(
-                                text = stringResource(R.string.setting_show_question),
-                                style = MaterialTheme.typography.titleSmall,
-                                fontWeight = FontWeight.Medium
-                            )
-                            Text(
-                                text = stringResource(R.string.setting_show_question_desc),
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier.padding(top = 4.dp)
-                            )
+                        if (llmTestState is TestConnectionState.Testing)
+                            CircularProgressIndicator(modifier = Modifier.size(16.dp))
+                        else Text(stringResource(R.string.setting_test_llm))
+                    }
+                    OutlinedButton(
+                        onClick = {
+                            vlmTestState = TestConnectionState.Testing
+                            coroutineScope.launch {
+                                val result = OpenAIVisionProvider.testConcurrency()
+                                vlmTestState = result.fold(
+                                    onSuccess = { TestConnectionState.Success(it) },
+                                    onFailure = { TestConnectionState.Error(it.message ?: "未知错误") }
+                                )
+                            }
+                        },
+                        enabled = parallelMode && vlmTestState !is TestConnectionState.Testing,
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        if (vlmTestState is TestConnectionState.Testing)
+                            CircularProgressIndicator(modifier = Modifier.size(16.dp))
+                        else Text(stringResource(R.string.setting_test_vlm))
+                    }
+                    OutlinedButton(
+                        onClick = {
+                            searchTestState = TestConnectionState.Testing
+                            coroutineScope.launch {
+                                val result = TavilyClient.getInstance().testConcurrency()
+                                searchTestState = result.fold(
+                                    onSuccess = { TestConnectionState.Success(it) },
+                                    onFailure = { TestConnectionState.Error(it.message ?: "未知错误") }
+                                )
+                            }
+                        },
+                        enabled = parallelMode && searchTestState !is TestConnectionState.Testing,
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        if (searchTestState is TestConnectionState.Testing)
+                            CircularProgressIndicator(modifier = Modifier.size(16.dp))
+                        else Text(stringResource(R.string.setting_test_search))
+                    }
+                }
+            }
+
+            // ── Display Control ──
+            SectionLabel(stringResource(R.string.setting_display_control_title))
+            InfoCard(modifier = Modifier.padding(bottom = Spacing.xl)) {
+                SettingItem(
+                    title = stringResource(R.string.setting_show_question),
+                    description = stringResource(R.string.setting_show_question_desc),
+                    checked = showQuestion,
+                    onCheckedChange = { showQuestion = it; AppConfig.saveShowAnswerCardQuestion(it) }
+                )
+                SettingItem(
+                    title = stringResource(R.string.setting_show_options),
+                    description = stringResource(R.string.setting_show_options_desc),
+                    checked = showOptions,
+                    onCheckedChange = { showOptions = it; AppConfig.saveShowAnswerCardOptions(it) }
+                )
+            }
+
+            // ── Floating Window Appearance ──
+            SectionLabel(stringResource(R.string.setting_float_window_title))
+            InfoCard(modifier = Modifier.padding(bottom = Spacing.xl)) {
+                Text(
+                    text = stringResource(R.string.setting_float_button_size, floatButtonSize.toInt()),
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.SemiBold, color = if (isDark) TextDarkPrimary else TextDark
+                )
+                Slider(
+                    value = floatButtonSize,
+                    onValueChange = { floatButtonSize = it },
+                    onValueChangeFinished = { AppConfig.saveFloatButtonSize(floatButtonSize.toInt()) },
+                    valueRange = 32f..80f, steps = 11,
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = SliderDefaults.colors(
+                        thumbColor = PremiumPrimary,
+                        activeTrackColor = PremiumPrimary,
+                        inactiveTrackColor = if (isDark) GlassDarkBorder else InputBorder
+                    )
+                )
+                Spacer(Modifier.height(Spacing.sm))
+                Text(
+                    text = stringResource(R.string.setting_float_button_alpha, (floatButtonAlpha * 100).toInt()),
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.SemiBold, color = if (isDark) TextDarkPrimary else TextDark
+                )
+                Slider(
+                    value = floatButtonAlpha,
+                    onValueChange = { floatButtonAlpha = it },
+                    onValueChangeFinished = { AppConfig.saveFloatButtonAlpha(floatButtonAlpha) },
+                    valueRange = 0.1f..1.0f,
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = SliderDefaults.colors(
+                        thumbColor = PremiumPrimary,
+                        activeTrackColor = PremiumPrimary,
+                        inactiveTrackColor = if (isDark) GlassDarkBorder else InputBorder
+                    )
+                )
+                Spacer(Modifier.height(Spacing.sm))
+                Text(
+                    text = stringResource(R.string.setting_float_card_alpha, (floatCardAlpha * 100).toInt()),
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.SemiBold, color = if (isDark) TextDarkPrimary else TextDark
+                )
+                Slider(
+                    value = floatCardAlpha,
+                    onValueChange = { floatCardAlpha = it },
+                    onValueChangeFinished = { AppConfig.saveFloatCardAlpha(floatCardAlpha) },
+                    valueRange = 0.1f..1.0f,
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = SliderDefaults.colors(
+                        thumbColor = PremiumPrimary,
+                        activeTrackColor = PremiumPrimary,
+                        inactiveTrackColor = if (isDark) GlassDarkBorder else InputBorder
+                    )
+                )
+            }
+
+            // ── Theme ──
+            SectionLabel(stringResource(R.string.setting_theme_title))
+            InfoCard(modifier = Modifier.padding(bottom = Spacing.xl)) {
+                ThemeOption(
+                    label = stringResource(R.string.setting_theme_system),
+                    selected = darkMode == 0,
+                    onClick = { if (darkMode != 0) { darkMode = 0; ThemeState.update(0) } }
+                )
+                ThemeOption(
+                    label = stringResource(R.string.setting_theme_light),
+                    selected = darkMode == 1,
+                    onClick = { if (darkMode != 1) { darkMode = 1; ThemeState.update(1) } }
+                )
+                ThemeOption(
+                    label = stringResource(R.string.setting_theme_dark),
+                    selected = darkMode == 2,
+                    onClick = { if (darkMode != 2) { darkMode = 2; ThemeState.update(2) } }
+                )
+            }
+
+            // ── Language ──
+            SectionLabel(stringResource(R.string.about_language_title))
+            InfoCard(modifier = Modifier.padding(bottom = Spacing.xxl)) {
+                ThemeOption(
+                    label = stringResource(R.string.about_language_chinese),
+                    selected = currentLanguage == AppConfig.LANGUAGE_ZH,
+                    onClick = {
+                        if (currentLanguage != AppConfig.LANGUAGE_ZH) {
+                            selectedLanguage = AppConfig.LANGUAGE_ZH
+                            showRestartDialog = true
                         }
-                        Switch(
-                            checked = showQuestion,
-                            onCheckedChange = {
-                                showQuestion = it
-                                AppConfig.saveShowAnswerCardQuestion(it)
-                            }
-                        )
                     }
-
-                    Spacer(modifier = Modifier.height(16.dp))
-
-                    // 显示选项开关
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(
-                                text = stringResource(R.string.setting_show_options),
-                                style = MaterialTheme.typography.titleSmall,
-                                fontWeight = FontWeight.Medium
-                            )
-                            Text(
-                                text = stringResource(R.string.setting_show_options_desc),
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier.padding(top = 4.dp)
-                            )
+                )
+                ThemeOption(
+                    label = stringResource(R.string.about_language_english),
+                    selected = currentLanguage == AppConfig.LANGUAGE_EN,
+                    onClick = {
+                        if (currentLanguage != AppConfig.LANGUAGE_EN) {
+                            selectedLanguage = AppConfig.LANGUAGE_EN
+                            showRestartDialog = true
                         }
-                        Switch(
-                            checked = showOptions,
-                            onCheckedChange = {
-                                showOptions = it
-                                AppConfig.saveShowAnswerCardOptions(it)
-                            }
-                        )
                     }
-                }
+                )
             }
 
-            Spacer(modifier = Modifier.height(16.dp))
-
-            // 悬浮窗外观设置卡片
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(16.dp),
-                colors = CardDefaults.cardColors(
-                    containerColor = MaterialTheme.colorScheme.surface
-                ),
-                elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
-                border = BorderStroke(0.5.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
-            ) {
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(16.dp)
-                ) {
-                    Text(
-                        text = stringResource(R.string.setting_float_window_title),
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold,
-                        modifier = Modifier.padding(bottom = 4.dp)
-                    )
-                    Text(
-                        text = stringResource(R.string.setting_float_window_desc),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.padding(bottom = 16.dp)
-                    )
-
-                    // 按钮大小
-                    Text(
-                        text = stringResource(R.string.setting_float_button_size, floatButtonSize.toInt()),
-                        style = MaterialTheme.typography.titleSmall,
-                        fontWeight = FontWeight.Medium
-                    )
-                    Slider(
-                        value = floatButtonSize,
-                        onValueChange = { floatButtonSize = it },
-                        onValueChangeFinished = {
-                            AppConfig.saveFloatButtonSize(floatButtonSize.toInt())
-                        },
-                        valueRange = 32f..80f,
-                        steps = 11,
-                        modifier = Modifier.fillMaxWidth()
-                    )
-
-                    Spacer(modifier = Modifier.height(8.dp))
-
-                    // 按钮透明度
-                    Text(
-                        text = stringResource(R.string.setting_float_button_alpha, (floatButtonAlpha * 100).toInt()),
-                        style = MaterialTheme.typography.titleSmall,
-                        fontWeight = FontWeight.Medium
-                    )
-                    Slider(
-                        value = floatButtonAlpha,
-                        onValueChange = { floatButtonAlpha = it },
-                        onValueChangeFinished = {
-                            AppConfig.saveFloatButtonAlpha(floatButtonAlpha)
-                        },
-                        valueRange = 0.1f..1.0f,
-                        modifier = Modifier.fillMaxWidth()
-                    )
-
-                    Spacer(modifier = Modifier.height(8.dp))
-
-                    // 卡片透明度
-                    Text(
-                        text = stringResource(R.string.setting_float_card_alpha, (floatCardAlpha * 100).toInt()),
-                        style = MaterialTheme.typography.titleSmall,
-                        fontWeight = FontWeight.Medium
-                    )
-                    Slider(
-                        value = floatCardAlpha,
-                        onValueChange = { floatCardAlpha = it },
-                        onValueChangeFinished = {
-                            AppConfig.saveFloatCardAlpha(floatCardAlpha)
-                        },
-                        valueRange = 0.1f..1.0f,
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                }
-            }
-
-            Spacer(modifier = Modifier.height(16.dp))
-
-            // 外观模式设置卡片
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(16.dp),
-                colors = CardDefaults.cardColors(
-                    containerColor = MaterialTheme.colorScheme.surface
-                ),
-                elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
-                border = BorderStroke(0.5.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
-            ) {
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(16.dp)
-                ) {
-                    Text(
-                        text = stringResource(R.string.setting_theme_title),
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold,
-                        modifier = Modifier.padding(bottom = 12.dp)
-                    )
-
-                    // 跟随系统
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable {
-                                if (darkMode != 0) {
-                                    darkMode = 0
-                                    ThemeState.update(0)
-                                }
-                            }
-                            .padding(vertical = 12.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        RadioButton(
-                            selected = darkMode == 0,
-                            onClick = {
-                                if (darkMode != 0) {
-                                    darkMode = 0
-                                    ThemeState.update(0)
-                                }
-                            }
-                        )
-                        Spacer(modifier = Modifier.width(12.dp))
-                        Text(
-                            text = stringResource(R.string.setting_theme_system),
-                            style = MaterialTheme.typography.bodyMedium
-                        )
-                    }
-
-                    // 浅色模式
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable {
-                                if (darkMode != 1) {
-                                    darkMode = 1
-                                    ThemeState.update(1)
-                                }
-                            }
-                            .padding(vertical = 12.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        RadioButton(
-                            selected = darkMode == 1,
-                            onClick = {
-                                if (darkMode != 1) {
-                                    darkMode = 1
-                                    ThemeState.update(1)
-                                }
-                            }
-                        )
-                        Spacer(modifier = Modifier.width(12.dp))
-                        Text(
-                            text = stringResource(R.string.setting_theme_light),
-                            style = MaterialTheme.typography.bodyMedium
-                        )
-                    }
-
-                    // 深色模式
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable {
-                                if (darkMode != 2) {
-                                    darkMode = 2
-                                    ThemeState.update(2)
-                                }
-                            }
-                            .padding(vertical = 12.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        RadioButton(
-                            selected = darkMode == 2,
-                            onClick = {
-                                if (darkMode != 2) {
-                                    darkMode = 2
-                                    ThemeState.update(2)
-                                }
-                            }
-                        )
-                        Spacer(modifier = Modifier.width(12.dp))
-                        Text(
-                            text = stringResource(R.string.setting_theme_dark),
-                            style = MaterialTheme.typography.bodyMedium
-                        )
-                    }
-                }
-            }
-
-            Spacer(modifier = Modifier.height(16.dp))
-
-            // 语言设置卡片
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(16.dp),
-                colors = CardDefaults.cardColors(
-                    containerColor = MaterialTheme.colorScheme.surface
-                ),
-                elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
-                border = BorderStroke(0.5.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
-            ) {
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(16.dp)
-                ) {
-                    Text(
-                        text = stringResource(R.string.about_language_title),
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold,
-                        modifier = Modifier.padding(bottom = 12.dp)
-                    )
-
-                    // 中文选项
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable {
-                                if (currentLanguage != AppConfig.LANGUAGE_ZH) {
-                                    selectedLanguage = AppConfig.LANGUAGE_ZH
-                                    showRestartDialog = true
-                                }
-                            }
-                            .padding(vertical = 12.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        RadioButton(
-                            selected = currentLanguage == AppConfig.LANGUAGE_ZH,
-                            onClick = {
-                                if (currentLanguage != AppConfig.LANGUAGE_ZH) {
-                                    selectedLanguage = AppConfig.LANGUAGE_ZH
-                                    showRestartDialog = true
-                                }
-                            }
-                        )
-                        Spacer(modifier = Modifier.width(12.dp))
-                        Text(
-                            text = stringResource(R.string.about_language_chinese),
-                            style = MaterialTheme.typography.bodyMedium
-                        )
-                    }
-
-                    // 英文选项
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable {
-                                if (currentLanguage != AppConfig.LANGUAGE_EN) {
-                                    selectedLanguage = AppConfig.LANGUAGE_EN
-                                    showRestartDialog = true
-                                }
-                            }
-                            .padding(vertical = 12.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        RadioButton(
-                            selected = currentLanguage == AppConfig.LANGUAGE_EN,
-                            onClick = {
-                                if (currentLanguage != AppConfig.LANGUAGE_EN) {
-                                    selectedLanguage = AppConfig.LANGUAGE_EN
-                                    showRestartDialog = true
-                                }
-                            }
-                        )
-                        Spacer(modifier = Modifier.width(12.dp))
-                        Text(
-                            text = stringResource(R.string.about_language_english),
-                            style = MaterialTheme.typography.bodyMedium
-                        )
-                    }
-                }
-            }
+            Spacer(Modifier.height(Spacing.xxxl))
         }
     }
 
-    // 重启确认对话框
+    // Restart dialog
     if (showRestartDialog && selectedLanguage != null) {
         AlertDialog(
-            onDismissRequest = {
-                showRestartDialog = false
-                selectedLanguage = null
-            },
+            onDismissRequest = { showRestartDialog = false; selectedLanguage = null },
             title = {
-                Text(
-                    text = stringResource(R.string.about_restart_dialog_title),
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold
-                )
+                Text(stringResource(R.string.about_restart_dialog_title), fontWeight = FontWeight.Bold)
             },
-            text = {
-                Text(
-                    text = stringResource(R.string.about_restart_dialog_message),
-                    style = MaterialTheme.typography.bodyMedium
-                )
-            },
+            text = { Text(stringResource(R.string.about_restart_dialog_message)) },
             confirmButton = {
-                TextButton(
-                    onClick = {
-                        selectedLanguage?.let { lang ->
-                            onLanguageChange(lang)
-                        }
-                    }
-                ) {
+                TextButton(onClick = { selectedLanguage?.let { onLanguageChange(it) } }) {
                     Text(stringResource(R.string.button_confirm))
                 }
             },
             dismissButton = {
-                TextButton(
-                    onClick = {
-                        showRestartDialog = false
-                        selectedLanguage = null
-                    }
-                ) {
+                TextButton(onClick = { showRestartDialog = false; selectedLanguage = null }) {
                     Text(stringResource(R.string.button_cancel))
                 }
             }
@@ -911,3 +518,29 @@ fun SettingsScreen(
     }
 }
 
+@Composable
+private fun ThemeOption(label: String, selected: Boolean, onClick: () -> Unit) {
+    val isDark = LocalIsDarkMode.current
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable { onClick() }
+            .padding(vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        RadioButton(
+            selected = selected,
+            onClick = onClick,
+            colors = RadioButtonDefaults.colors(
+                selectedColor = PremiumPrimary,
+                unselectedColor = if (isDark) TextDarkTertiary else TextTertiary
+            )
+        )
+        Spacer(Modifier.width(Spacing.md))
+        Text(
+            text = label,
+            style = MaterialTheme.typography.bodyMedium,
+            color = if (isDark) TextDarkPrimary else TextDark
+        )
+    }
+}

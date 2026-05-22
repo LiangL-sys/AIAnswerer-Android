@@ -4,6 +4,7 @@
 
     <!-- Main screen -->
     <string name="main_title">AI Answerer</string>
+    <string name="main_subtitle">Capture · Recognize · Answer, in one flow</string>
     <string name="status_label">Current Status</string>
     <string name="status_running">Answer Mode Running</string>
     <string name="status_running_desc">Floating window is visible</string>
@@ -304,6 +305,17 @@
     <string name="status_vision_detected_multi">📋 Detected %d questions</string>
     <string name="status_vision_no_question">⚠️ No questions detected</string>
     <string name="status_vision_fallback">⚠️ Vision failed, please retry</string>
+
+    <!-- Capture Mode -->
+    <string name="setting_capture_mode">Capture Mode</string>
+    <string name="setting_capture_mode_desc">Choose how to get screen content</string>
+    <string name="capture_mode_screenshot">Screenshot</string>
+    <string name="capture_mode_accessibility">Screen Reader</string>
+    <string name="accessibility_status_enabled">Accessibility service enabled</string>
+    <string name="accessibility_status_disabled">Accessibility service not enabled</string>
+    <string name="accessibility_enable_hint">Please enable AI Answerer accessibility service in system settings</string>
+    <string name="status_reading_screen">📖 Reading screen content…</string>
+    <string name="status_screen_read_failed">Screen reading failed, please ensure accessibility service is enabled</string>
 
     <!-- Thinking Mode -->
     <string name="setting_thinking_mode">Enable Thinking Mode</string>
